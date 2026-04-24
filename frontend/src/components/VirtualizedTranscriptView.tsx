@@ -4,6 +4,7 @@ import { useCallback, useRef, useReducer, startTransition, useEffect, useState, 
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useAutoScroll } from "@/hooks/useAutoScroll";
 import { useTranscriptStreaming } from "@/hooks/useTranscriptStreaming";
+import { useUserDisplayName } from "@/hooks/useUserDisplayName";
 import { ConfidenceIndicator } from "./ConfidenceIndicator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 import { RecordingStatusBar } from "./RecordingStatusBar";
@@ -85,6 +86,7 @@ const TranscriptSegment = memo(function TranscriptSegment({
     showConfidence,
     speaker,
     segmentSpeakerId,
+    userDisplayName,
 }: {
     id: string;
     timestamp: number;
@@ -94,12 +96,13 @@ const TranscriptSegment = memo(function TranscriptSegment({
     showConfidence: boolean;
     speaker?: Speaker;
     segmentSpeakerId?: string | null;
+    userDisplayName: string;
 }) {
     const displayText = cleanStopWords(text) || (text.trim() === '' ? '[Silence]' : text);
 
     // Virtual ids set by live transcription (before post-hoc diarization runs):
-    //   - "live-mic"    → "You"    (golden hue 0)
-    //   - "live-system" → "Remote" (golden hue 1)
+    //   - "live-mic"    → user display name (fallback "You"), golden hue 0
+    //   - "live-system" → "Remote", golden hue 1
     // After diarization, transcripts carry a real speakers(id) UUID and the
     // `speaker` prop is the DB row (may have a user-assigned display_name).
     let speakerLabel: string | null = null;
@@ -108,7 +111,7 @@ const TranscriptSegment = memo(function TranscriptSegment({
         speakerLabel = speaker.display_name?.trim() || `Speaker ${speaker.cluster_idx + 1}`;
         speakerColor = colorForCluster(speaker.cluster_idx);
     } else if (segmentSpeakerId === 'live-mic') {
-        speakerLabel = 'You';
+        speakerLabel = userDisplayName || 'You';
         speakerColor = colorForCluster(0);
     } else if (segmentSpeakerId === 'live-system') {
         speakerLabel = 'Remote';
@@ -184,6 +187,9 @@ export const VirtualizedTranscriptView: React.FC<VirtualizedTranscriptViewProps>
     const scrollRef = useRef<HTMLDivElement>(null);
     // Ref for infinite scroll trigger element
     const loadMoreTriggerRef = useRef<HTMLDivElement>(null);
+
+    // User-configured name for labeling mic-sourced lines (live-mic).
+    const userDisplayName = useUserDisplayName();
 
     // Force re-render without flushSync (avoids React warning)
     const [, rerender] = useReducer((x: number) => x + 1, 0);
@@ -357,6 +363,7 @@ export const VirtualizedTranscriptView: React.FC<VirtualizedTranscriptViewProps>
                                                 : undefined
                                         }
                                         segmentSpeakerId={segment.speakerId}
+                                        userDisplayName={userDisplayName}
                                     />
                                 </div>
                             );
@@ -419,6 +426,7 @@ export const VirtualizedTranscriptView: React.FC<VirtualizedTranscriptViewProps>
                                                 : undefined
                                         }
                                         segmentSpeakerId={segment.speakerId}
+                                        userDisplayName={userDisplayName}
                                     />
                                 </motion.div>
                             );

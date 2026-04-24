@@ -31,7 +31,9 @@ pub fn show_console() -> Result<String, String> {
                 return Err("Failed to allocate console".to_string());
             }
             // Reinitialize stdout, stdin, stderr for the new console
-            std::env::set_var("RUST_LOG", "info");
+            if std::env::var_os("RUST_LOG").is_none() {
+                std::env::set_var("RUST_LOG", "info,xcap=off");
+            }
             env_logger::init();
         } else {
             // Show existing console window

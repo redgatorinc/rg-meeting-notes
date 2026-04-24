@@ -192,6 +192,18 @@ export interface AdapterStatusReport {
   status: AdapterStatus;
 }
 
+// ---- Audio sources (apps currently producing audio) -----------------------
+
+export type AudioSourceKind = 'microphone' | 'app' | 'system';
+
+export interface AudioSource {
+  id: string;
+  display_name: string;
+  kind: AudioSourceKind;
+  process_name?: string | null;
+  active: boolean;
+}
+
 // Transcript segment data for virtualized display
 export interface TranscriptSegmentData {
   id: string;

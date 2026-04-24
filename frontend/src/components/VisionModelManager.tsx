@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import { Check, Download, Loader2, Trash2 } from 'lucide-react';
+import { AnimatePresence, motion } from 'framer-motion';
+import { AlertTriangle, Check, Eye, Loader2, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 type VisionModelStatus =
@@ -27,6 +28,7 @@ interface Props {
   onSelect: (id: string) => void;
   /** Whether selection controls are enabled (e.g. user's AI source is local). */
   enabled?: boolean;
+  className?: string;
 }
 
 /**
@@ -35,17 +37,28 @@ interface Props {
  * delete, frontend listens for the three download-lifecycle events
  * and throttles per-model progress into per-row state.
  */
-export function VisionModelManager({ selectedId, onSelect, enabled = true }: Props) {
+export function VisionModelManager({
+  selectedId,
+  onSelect,
+  enabled = true,
+  className = '',
+}: Props) {
   const [models, setModels] = useState<VisionModel[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<Record<string, 'downloading' | 'deleting'>>({});
   const progressThrottle = useRef<Map<string, { progress: number; ts: number }>>(new Map());
 
   const reload = useCallback(async () => {
     try {
+      setError(null);
       const rows = (await invoke('vision_models_list')) as VisionModel[];
       setModels(rows);
     } catch (err) {
       console.error('vision_models_list failed', err);
+      setError(typeof err === 'string' ? err : 'Failed to load vision models');
+    } finally {
+      setLoading(false);
     }
   }, []);
 
@@ -143,89 +156,253 @@ export function VisionModelManager({ selectedId, onSelect, enabled = true }: Pro
     }
   }, [reload]);
 
-  return (
-    <div className="space-y-2">
-      {models.map((m) => {
-        const isSelected = selectedId === m.id && m.status.state === 'available';
-        const isDownloading =
-          m.status.state === 'downloading' || busy[m.id] === 'downloading';
-        const isAvailable = m.status.state === 'available';
-        const downloadProgress =
-          m.status.state === 'downloading' ? m.status.progress : null;
+  if (loading) {
+    return (
+      <div className={`space-y-3 ${className}`}>
+        <div className="animate-pulse space-y-3">
+          <div className="h-20 rounded-lg bg-gray-100" />
+          <div className="h-20 rounded-lg bg-gray-100" />
+        </div>
+      </div>
+    );
+  }
 
+  if (error) {
+    return (
+      <div className={`rounded-lg border border-red-200 bg-red-50 p-4 ${className}`}>
+        <p className="text-sm text-red-800">Failed to load AI models</p>
+        <p className="mt-1 text-xs text-red-600">{error}</p>
+      </div>
+    );
+  }
+
+  const selectedModel = models.find((m) => m.id === selectedId);
+
+  return (
+    <div className={`space-y-3 ${className}`}>
+      {models.map((m) => {
         return (
-          <div
+          <VisionModelCard
             key={m.id}
-            className={`flex items-start gap-3 rounded-md border px-3 py-2 ${
-              isSelected ? 'border-blue-400 bg-blue-50/50' : 'border-gray-200'
-            }`}
-          >
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-medium">{m.display_name}</span>
-                <span className="text-[11px] text-muted-foreground">
-                  {m.size_mb} MB
-                </span>
-                {isSelected && (
-                  <span className="text-[11px] text-blue-600 inline-flex items-center gap-0.5">
-                    <Check className="h-3 w-3" /> Selected
-                  </span>
-                )}
-              </div>
-              <p className="text-[11px] text-muted-foreground mt-0.5">{m.description}</p>
-              {downloadProgress !== null && (
-                <div className="mt-1.5 h-1 w-full bg-gray-100 rounded overflow-hidden">
-                  <div
-                    className="h-full bg-blue-500 transition-all"
-                    style={{ width: `${downloadProgress}%` }}
-                  />
-                </div>
-              )}
-            </div>
-            <div className="flex items-center gap-1 shrink-0">
-              {isAvailable && (
-                <button
-                  type="button"
-                  onClick={() => onSelect(m.id)}
-                  disabled={!enabled || isSelected}
-                  className="text-[11px] px-2 py-1 rounded text-primary hover:bg-gray-100 disabled:opacity-40"
-                >
-                  Select
-                </button>
-              )}
-              {isAvailable ? (
-                <button
-                  type="button"
-                  onClick={() => remove(m.id)}
-                  disabled={busy[m.id] === 'deleting'}
-                  className="text-[11px] px-2 py-1 rounded text-red-600 hover:bg-red-50 inline-flex items-center gap-1"
-                  title="Delete model files"
-                >
-                  <Trash2 className="h-3 w-3" />
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => download(m.id)}
-                  disabled={isDownloading}
-                  className="text-[11px] px-2 py-1 rounded text-primary hover:bg-gray-100 inline-flex items-center gap-1"
-                >
-                  {isDownloading ? (
-                    <>
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                      {downloadProgress !== null ? `${downloadProgress}%` : '…'}
-                    </>
-                  ) : (
-                    <>
-                      <Download className="h-3 w-3" /> Download
-                    </>
-                  )}
-                </button>
-              )}
-            </div>
-          </div>
+            model={m}
+            isSelected={selectedId === m.id && m.status.state === 'available'}
+            enabled={enabled}
+            isBusy={busy[m.id]}
+            onSelect={() => onSelect(m.id)}
+            onDownload={() => download(m.id)}
+            onDelete={() => remove(m.id)}
+          />
         );
       })}
+
+      {selectedModel && selectedModel.status.state === 'available' && (
+        <motion.div
+          initial={{ opacity: 0, y: -5 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="pt-2 text-center text-xs text-gray-500"
+        >
+          Using {selectedModel.display_name} for participant detection
+        </motion.div>
+      )}
     </div>
   );
+}
+
+interface VisionModelCardProps {
+  model: VisionModel;
+  isSelected: boolean;
+  enabled: boolean;
+  isBusy?: 'downloading' | 'deleting';
+  onSelect: () => void;
+  onDownload: () => void;
+  onDelete: () => void;
+}
+
+function VisionModelCard({
+  model,
+  isSelected,
+  enabled,
+  isBusy,
+  onSelect,
+  onDownload,
+  onDelete,
+}: VisionModelCardProps) {
+  const [isHovered, setIsHovered] = useState(false);
+  const isAvailable = model.status.state === 'available';
+  const isMissing = model.status.state === 'missing';
+  const isCorrupted = model.status.state === 'corrupted';
+  const isDownloading = model.status.state === 'downloading' || isBusy === 'downloading';
+  const downloadProgress = model.status.state === 'downloading' ? model.status.progress : null;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 5 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.2 }}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      className={`
+        relative rounded-lg border-2 transition-all
+        ${isSelected
+          ? 'border-blue-500 bg-blue-50'
+          : isAvailable
+            ? 'border-gray-200 bg-white hover:border-gray-300'
+            : 'border-gray-200 bg-gray-50'
+        }
+        ${isAvailable && enabled ? 'cursor-pointer' : 'cursor-default'}
+      `}
+      onClick={() => {
+        if (isAvailable && enabled) onSelect();
+      }}
+    >
+      {model.id === 'moondream2' && (
+        <div className="absolute -right-2 -top-2 rounded-full bg-blue-600 px-2 py-0.5 text-xs font-medium text-white">
+          Recommended
+        </div>
+      )}
+
+      <div className="p-4">
+        <div className="mb-3 flex items-start justify-between">
+          <div className="min-w-0 flex-1">
+            <div className="mb-1 flex flex-wrap items-center gap-2">
+              <Eye className="h-5 w-5 text-gray-500" />
+              <h3 className="font-semibold text-gray-900">{model.display_name}</h3>
+              {isSelected && (
+                <motion.span
+                  initial={{ scale: 0 }}
+                  animate={{ scale: 1 }}
+                  className="flex items-center gap-1 rounded-full bg-blue-600 px-2 py-0.5 text-xs font-medium text-white"
+                >
+                  <Check className="h-3 w-3" />
+                </motion.span>
+              )}
+            </div>
+            <p className="ml-7 text-sm text-gray-600">{model.description}</p>
+            <div className="ml-7 mt-1.5 flex items-center gap-4 text-sm text-gray-600">
+              <span>{formatVisionModelSize(model.size_mb)}</span>
+              <span>Vision detection</span>
+            </div>
+          </div>
+
+          <div className="ml-4 flex shrink-0 items-center gap-2">
+            {isAvailable && (
+              <>
+                <div className="flex items-center gap-1.5 text-green-600">
+                  <div className="h-2 w-2 rounded-full bg-green-500" />
+                  <span className="text-xs font-medium">Ready</span>
+                </div>
+                <AnimatePresence>
+                  {isHovered && (
+                    <motion.button
+                      type="button"
+                      initial={{ opacity: 0, scale: 0.8 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.8 }}
+                      transition={{ duration: 0.15 }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDelete();
+                      }}
+                      disabled={isBusy === 'deleting'}
+                      className="p-1 text-gray-400 transition-colors hover:text-red-600 disabled:opacity-40"
+                      title="Delete model to free up space"
+                    >
+                      {isBusy === 'deleting' ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Trash2 className="h-4 w-4" />
+                      )}
+                    </motion.button>
+                  )}
+                </AnimatePresence>
+              </>
+            )}
+
+            {isMissing && !isDownloading && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDownload();
+                }}
+                className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-blue-700"
+              >
+                Download
+              </button>
+            )}
+
+            {isDownloading && (
+              <div className="flex items-center gap-2 text-blue-600">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span className="text-xs font-medium">Downloading</span>
+              </div>
+            )}
+
+            {isCorrupted && (
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4 text-orange-600" />
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDelete();
+                  }}
+                  className="rounded-md bg-orange-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-orange-700"
+                >
+                  Delete
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDownload();
+                  }}
+                  className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-blue-700"
+                >
+                  Re-download
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {downloadProgress !== null && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            className="mt-3 border-t border-gray-200 pt-3"
+          >
+            <div className="mb-2 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium text-blue-600">Downloading...</span>
+                <span className="text-sm font-semibold text-blue-600">
+                  {Math.round(downloadProgress)}%
+                </span>
+              </div>
+            </div>
+            <div className="h-2 w-full overflow-hidden rounded-full bg-gray-200">
+              <motion.div
+                className="h-full rounded-full bg-gradient-to-r from-blue-500 to-blue-600"
+                initial={{ width: 0 }}
+                animate={{ width: `${downloadProgress}%` }}
+                transition={{ duration: 0.3, ease: 'easeOut' }}
+              />
+            </div>
+            <p className="mt-1 text-xs text-gray-500">
+              {formatVisionModelSize((model.size_mb * downloadProgress) / 100)} /{' '}
+              {formatVisionModelSize(model.size_mb)}
+            </p>
+          </motion.div>
+        )}
+      </div>
+    </motion.div>
+  );
+}
+
+function formatVisionModelSize(sizeMb: number) {
+  if (sizeMb >= 1024) {
+    return `${(sizeMb / 1024).toFixed(1)} GB`;
+  }
+
+  return `${Math.round(sizeMb)} MB`;
 }

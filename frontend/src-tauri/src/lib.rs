@@ -618,6 +618,7 @@ pub fn run() {
             audio::recording_commands::resume_recording,
             audio::recording_commands::is_recording_paused,
             audio::recording_commands::get_recording_state,
+            audio::recording_commands::get_recording_audio_status,
             audio::recording_commands::get_meeting_folder_path,
             // Reload sync commands (retrieve transcript history and meeting name)
             audio::recording_commands::get_transcript_history,
@@ -688,6 +689,9 @@ pub fn run() {
             vision_model::commands::vision_models_list,
             vision_model::commands::vision_model_download,
             vision_model::commands::vision_model_delete,
+            // Mic mute + per-app audio source enumeration for Home card.
+            audio::mic_mute::get_microphone_mute_state,
+            audio::sessions::list_audio_sources,
             // Summary commands
             summary::api_process_transcript,
             summary::api_get_summary,
@@ -723,6 +727,7 @@ pub fn run() {
             // Meeting detection commands
             meeting_detector::set_meeting_detection_enabled,
             meeting_detector::get_meeting_detection_enabled,
+            meeting_detector::current_meeting_detection,
             meeting_detector::dismiss_meeting_banner,
             meeting_detector::accept_meeting_banner,
             // Notification system commands
@@ -744,6 +749,8 @@ pub fn run() {
             audio::system_audio_commands::start_system_audio_capture_command,
             audio::system_audio_commands::list_system_audio_devices_command,
             audio::system_audio_commands::check_system_audio_permissions_command,
+            audio::system_audio_commands::get_audio_detection_snapshot,
+            audio::system_audio_commands::get_system_audio_using_apps,
             audio::system_audio_commands::start_system_audio_monitoring,
             audio::system_audio_commands::stop_system_audio_monitoring,
             audio::system_audio_commands::get_system_audio_monitoring_status,

@@ -81,7 +81,12 @@ export function LiveParticipantStatus({
 
   // Reset the dismiss flag when a new recording starts.
   useEffect(() => {
-    if (visible) setDismissed(false);
+    if (visible) {
+      setDismissed(false);
+    } else {
+      setDismissed(false);
+      setState({ kind: 'idle' });
+    }
   }, [visible]);
 
   if (!visible || dismissed) return null;

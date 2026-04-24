@@ -7,6 +7,16 @@ import { invoke } from "@tauri-apps/api/core"
 import Analytics from "@/lib/analytics"
 import AnalyticsConsentSwitch from "./AnalyticsConsentSwitch"
 import { useConfig, NotificationSettings } from "@/contexts/ConfigContext"
+import {
+  SettingsField,
+  SettingsInset,
+  SettingsNotice,
+  SettingsPanel,
+  SettingsPanelHeader,
+  SettingsSubsectionTitle,
+  SettingsTogglePanel,
+} from "@/components/settings/SettingsPanel"
+import { setUserDisplayName, useUserDisplayName } from "@/hooks/useUserDisplayName"
 
 export function PreferenceSettings() {
   const {
@@ -19,6 +29,9 @@ export function PreferenceSettings() {
 
   const [notificationsEnabled, setNotificationsEnabled] = useState<boolean | null>(null);
   const [meetingDetectionEnabled, setMeetingDetectionEnabled] = useState<boolean>(true);
+  const storedDisplayName = useUserDisplayName();
+  const [displayNameInput, setDisplayNameInput] = useState<string>('');
+  const [displayNameSyncedFromStore, setDisplayNameSyncedFromStore] = useState(false);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [previousNotificationsEnabled, setPreviousNotificationsEnabled] = useState<boolean | null>(null);
   const hasTrackedViewRef = useRef(false);
@@ -116,6 +129,21 @@ export function PreferenceSettings() {
     handleUpdateNotificationSettings();
   }, [notificationsEnabled, notificationSettings, isInitialLoad, previousNotificationsEnabled, updateNotificationSettings])
 
+  useEffect(() => {
+    if (!displayNameSyncedFromStore) {
+      setDisplayNameInput(storedDisplayName);
+      setDisplayNameSyncedFromStore(true);
+    }
+  }, [storedDisplayName, displayNameSyncedFromStore]);
+
+  const handleSaveDisplayName = async () => {
+    try {
+      await setUserDisplayName(displayNameInput);
+    } catch (error) {
+      console.error('Failed to persist display name:', error);
+    }
+  };
+
   const handleMeetingDetectionChange = async (enabled: boolean) => {
     setMeetingDetectionEnabled(enabled);
     try {
@@ -163,34 +191,52 @@ export function PreferenceSettings() {
 
   return (
     <div className="space-y-6">
-      {/* Notifications Section */}
-      <div className="bg-white rounded-lg border border-gray-200 p-6 shadow-sm">
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">Notifications</h3>
-            <p className="text-sm text-gray-600">Enable or disable notifications of start and end of meeting</p>
-          </div>
-          <Switch checked={notificationsEnabledValue} onCheckedChange={setNotificationsEnabled} />
-        </div>
-      </div>
+      <SettingsPanel>
+        <SettingsPanelHeader
+          title="Your profile"
+          description="Used to label live transcript lines from your microphone so they don't just say 'You'."
+          className="mb-4"
+        />
+        <SettingsField
+          title="Your display name"
+          description="Shown before each transcript line that comes from your microphone. Leave blank to fall back to 'You'."
+        >
+          <input
+            type="text"
+            value={displayNameInput}
+            onChange={(e) => setDisplayNameInput(e.target.value)}
+            onBlur={handleSaveDisplayName}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.currentTarget.blur();
+              }
+            }}
+            placeholder="e.g. Fabio"
+            maxLength={64}
+            className="flex-1 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          />
+        </SettingsField>
+      </SettingsPanel>
 
-      {/* Meeting App Detection Section */}
-      <div className="bg-white rounded-lg border border-gray-200 p-6 shadow-sm">
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">Auto-detect Meeting Apps</h3>
-            <p className="text-sm text-gray-600">Show a notification when Zoom, Teams, or other meeting apps are running</p>
-          </div>
-          <Switch checked={meetingDetectionEnabled} onCheckedChange={handleMeetingDetectionChange} />
-        </div>
-      </div>
+      <SettingsTogglePanel
+        title="Notifications"
+        description="Enable or disable notifications of start and end of meeting."
+        control={<Switch checked={notificationsEnabledValue} onCheckedChange={setNotificationsEnabled} />}
+      />
+
+      <SettingsTogglePanel
+        title="Auto-detect Meeting Apps"
+        description="Show a notification when Zoom, Teams, or other meeting apps are running."
+        control={<Switch checked={meetingDetectionEnabled} onCheckedChange={handleMeetingDetectionChange} />}
+      />
 
       {/* Data Storage Locations Section */}
-      <div className="bg-white rounded-lg border border-gray-200 p-6 shadow-sm">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Data Storage Locations</h3>
-        <p className="text-sm text-gray-600 mb-6">
-          View and access where Meetily stores your data
-        </p>
+      <SettingsPanel>
+        <SettingsPanelHeader
+          title="Data Storage Locations"
+          description="View and access where Meetily stores your data."
+          className="mb-6"
+        />
 
         <div className="space-y-4">
           {/* Database Location */}
@@ -224,8 +270,8 @@ export function PreferenceSettings() {
           </div> */}
 
           {/* Recordings Location */}
-          <div className="p-4 border rounded-lg bg-gray-50">
-            <div className="font-medium mb-2">Meeting Recordings</div>
+          <SettingsInset>
+            <SettingsSubsectionTitle className="mb-2">Meeting Recordings</SettingsSubsectionTitle>
             <div className="text-sm text-gray-600 mb-3 break-all font-mono text-xs">
               {storageLocations?.recordings || 'Loading...'}
             </div>
@@ -236,20 +282,20 @@ export function PreferenceSettings() {
               <FolderOpen className="w-4 h-4" />
               Open Folder
             </button>
-          </div>
+          </SettingsInset>
         </div>
 
-        <div className="mt-4 p-3 bg-blue-50 rounded-md">
+        <SettingsNotice tone="info" className="mt-4 p-3 text-xs">
           <p className="text-xs text-blue-800">
             <strong>Note:</strong> Database and models are stored together in your application data directory for unified management.
           </p>
-        </div>
-      </div>
+        </SettingsNotice>
+      </SettingsPanel>
 
       {/* Analytics Section */}
-      <div className="bg-white rounded-lg border border-gray-200 p-6 shadow-sm">
+      <SettingsPanel>
         <AnalyticsConsentSwitch />
-      </div>
+      </SettingsPanel>
     </div>
   )
 }

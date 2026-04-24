@@ -84,11 +84,19 @@ impl AudioError {
 }
 
 /// Recording statistics
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct RecordingStats {
     pub chunks_processed: u64,
     pub total_duration: f64,
     pub last_activity: Option<Instant>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SignalStats {
+    pub rms_level: f32,
+    pub peak_level: f32,
+    pub is_active: bool,
+    pub updated_at: Instant,
 }
 
 /// Unified state management for audio recording
@@ -118,6 +126,8 @@ pub struct RecordingState {
 
     // Statistics
     stats: Mutex<RecordingStats>,
+    last_microphone_signal: Mutex<Option<SignalStats>>,
+    last_system_signal: Mutex<Option<SignalStats>>,
 
     // Recording start time for accurate timestamps
     recording_start: Mutex<Option<Instant>>,
@@ -142,6 +152,8 @@ impl RecordingState {
             last_error: Mutex::new(None),
             error_callback: Mutex::new(None),
             stats: Mutex::new(RecordingStats::default()),
+            last_microphone_signal: Mutex::new(None),
+            last_system_signal: Mutex::new(None),
             recording_start: Mutex::new(None),
             pause_start: Mutex::new(None),
             total_pause_duration: Mutex::new(std::time::Duration::ZERO),
@@ -268,6 +280,8 @@ impl RecordingState {
             return Ok(()); // Silently discard chunks while paused
         }
 
+        self.update_signal_stats(&chunk);
+
         if let Some(sender) = self.audio_sender.lock().unwrap().as_ref() {
             sender.send(chunk).map_err(|_| anyhow::anyhow!("Failed to send audio chunk"))?;
 
@@ -348,6 +362,13 @@ impl RecordingState {
         self.stats.lock().unwrap().clone()
     }
 
+    pub fn get_signal_stats(&self, device_type: DeviceType) -> Option<SignalStats> {
+        match device_type {
+            DeviceType::Microphone => self.last_microphone_signal.lock().unwrap().clone(),
+            DeviceType::System => self.last_system_signal.lock().unwrap().clone(),
+        }
+    }
+
     pub fn get_recording_duration(&self) -> Option<f64> {
         self.recording_start
             .lock()
@@ -403,6 +424,8 @@ impl RecordingState {
         *self.last_error.lock().unwrap() = None;
         *self.error_callback.lock().unwrap() = None;
         *self.stats.lock().unwrap() = RecordingStats::default();
+        *self.last_microphone_signal.lock().unwrap() = None;
+        *self.last_system_signal.lock().unwrap() = None;
         *self.recording_start.lock().unwrap() = None;
         *self.pause_start.lock().unwrap() = None;
         *self.total_pause_duration.lock().unwrap() = std::time::Duration::ZERO;
@@ -430,6 +453,8 @@ impl Default for RecordingState {
             last_error: Mutex::new(None),
             error_callback: Mutex::new(None),
             stats: Mutex::new(RecordingStats::default()),
+            last_microphone_signal: Mutex::new(None),
+            last_system_signal: Mutex::new(None),
             recording_start: Mutex::new(None),
             pause_start: Mutex::new(None),
             total_pause_duration: Mutex::new(std::time::Duration::ZERO),
@@ -437,13 +462,34 @@ impl Default for RecordingState {
     }
 }
 
-// Thread-safe cloning for RecordingStats
-impl Clone for RecordingStats {
-    fn clone(&self) -> Self {
-        Self {
-            chunks_processed: self.chunks_processed,
-            total_duration: self.total_duration,
-            last_activity: self.last_activity,
+impl RecordingState {
+    fn update_signal_stats(&self, chunk: &AudioChunk) {
+        if chunk.data.is_empty() {
+            return;
+        }
+
+        let rms = (chunk.data.iter().map(|sample| sample * sample).sum::<f32>()
+            / chunk.data.len() as f32)
+            .sqrt();
+        let peak = chunk
+            .data
+            .iter()
+            .map(|sample| sample.abs())
+            .fold(0.0, f32::max);
+        let stats = SignalStats {
+            rms_level: rms.min(1.0),
+            peak_level: peak.min(1.0),
+            is_active: rms > 0.001 || peak > 0.01,
+            updated_at: Instant::now(),
+        };
+
+        match &chunk.device_type {
+            DeviceType::Microphone => {
+                *self.last_microphone_signal.lock().unwrap() = Some(stats);
+            }
+            DeviceType::System => {
+                *self.last_system_signal.lock().unwrap() = Some(stats);
+            }
         }
     }
 }

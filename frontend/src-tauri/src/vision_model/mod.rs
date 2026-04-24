@@ -37,9 +37,9 @@ const VISION_MODELS: &[VisionModelConfig] = &[
     VisionModelConfig {
         id: "moondream2",
         display_name: "Moondream2",
-        size_mb: 1870,
-        description: "Purpose-built VQA model. Small, fast, runs on CPU.",
-        repo: "vikhyatk/moondream2",
+        size_mb: 2840,
+        description: "Purpose-built VQA model. Runs locally on CPU.",
+        repo: "moondream/moondream2-gguf",
         filename: "moondream2-text-model-f16.gguf",
     },
     VisionModelConfig {
@@ -199,9 +199,15 @@ impl VisionModelEngine {
             .get(url)
             .send()
             .await
-            .context("GET model URL")?
-            .error_for_status()
-            .context("model URL returned error")?;
+            .context("GET model URL")?;
+
+        if !resp.status().is_success() {
+            return Err(anyhow!(
+                "model URL returned {} for {}",
+                resp.status(),
+                url
+            ));
+        }
 
         let total = resp.content_length().unwrap_or(expected_size);
         let mut stream = resp.bytes_stream();

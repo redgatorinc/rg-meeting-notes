@@ -2,17 +2,26 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
-import { Label } from './ui/label';
 import { Switch } from './ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Input } from './ui/input';
 import type {
   AdapterStatusReport,
+  AiSource,
   DetectionMode,
   ParticipantDetectionConfig,
 } from '@/types';
 import { VisionModelManager } from './VisionModelManager';
+import {
+  SettingsField,
+  SettingsInset,
+  SettingsNotice,
+  SettingsPanel,
+  SettingsPanelHeader,
+  SettingsSubsectionTitle,
+} from '@/components/settings/SettingsPanel';
 
 /**
  * Settings → Transcription → Participants Detection.
@@ -66,11 +75,17 @@ export function ParticipantDetectionSettings() {
 
   const update = (patch: Partial<ParticipantDetectionConfig>) =>
     persist({ ...cfg, ...patch });
+  const integratedStatuses = summarizeAdapterStatuses(statuses);
 
   return (
-    <div className="space-y-4 border-t pt-4">
-      <div className="flex items-center justify-between">
-        <Label className="text-sm font-medium">Participant detection</Label>
+    <SettingsPanel className="space-y-4">
+      <div className="flex items-center justify-between gap-6">
+        <div className="min-w-0 flex-1">
+          <SettingsPanelHeader
+            title="Participant Detection"
+            description="Identify meeting participants from app integrations or AI fallback."
+          />
+        </div>
         <Switch
           checked={cfg.enabled}
           onCheckedChange={(v) => update({ enabled: v })}
@@ -80,13 +95,12 @@ export function ParticipantDetectionSettings() {
 
       {cfg.enabled && (
         <>
-          <div>
-            <Label className="text-xs text-muted-foreground">Detection mode</Label>
+          <SettingsField title="Detection Mode">
             <Select
               value={cfg.mode}
               onValueChange={(v) => update({ mode: v as DetectionMode })}
             >
-              <SelectTrigger className="mt-1">
+              <SelectTrigger className="focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -97,44 +111,32 @@ export function ParticipantDetectionSettings() {
                 <SelectItem value="ai">AI model only</SelectItem>
               </SelectContent>
             </Select>
-          </div>
+          </SettingsField>
 
           {cfg.mode !== 'integrated' && (
-            <fieldset className="space-y-3 border rounded-md p-3">
-              <legend className="px-1 text-xs font-medium text-muted-foreground">
-                AI model
-              </legend>
-              <div className="flex items-center gap-4 text-xs">
-                <label className="inline-flex items-center gap-1.5">
-                  <input
-                    type="radio"
-                    checked={cfg.ai.source === 'local'}
-                    onChange={() =>
-                      persist({
-                        ...cfg,
-                        ai: { ...cfg.ai, source: 'local' },
-                      })
-                    }
-                  />
-                  Local
-                </label>
-                <label className="inline-flex items-center gap-1.5">
-                  <input
-                    type="radio"
-                    checked={cfg.ai.source === 'external'}
-                    onChange={() =>
-                      persist({
-                        ...cfg,
-                        ai: { ...cfg.ai, source: 'external' },
-                      })
-                    }
-                  />
-                  External
-                </label>
-              </div>
+            <div className="space-y-4">
+              <SettingsField title="AI Model">
+                <Select
+                  value={cfg.ai.source}
+                  onValueChange={(source) =>
+                    persist({
+                      ...cfg,
+                      ai: { ...cfg.ai, source: source as AiSource },
+                    })
+                  }
+                >
+                  <SelectTrigger className="focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
+                    <SelectValue placeholder="Select AI model source" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="local">Local vision model</SelectItem>
+                    <SelectItem value="external">External summary model</SelectItem>
+                  </SelectContent>
+                </Select>
+              </SettingsField>
 
               {cfg.ai.source === 'local' && (
-                <div className="space-y-2">
+                <div className="mt-6 space-y-3">
                   <VisionModelManager
                     selectedId={cfg.ai.local.model_id ?? null}
                     onSelect={(id) =>
@@ -148,16 +150,19 @@ export function ParticipantDetectionSettings() {
                     }
                     enabled
                   />
-                  <p className="text-[11px] text-amber-600">
-                    ⚠ Local vision inference ships in a follow-up. You can download and
-                    select models now; detection with Local still errors until the
-                    inference path is wired.
-                  </p>
+                  <SettingsNotice tone="warning" className="flex items-start gap-2 px-3 py-2 text-xs">
+                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                    <p>
+                      Local vision inference ships in a follow-up. You can download and
+                      select models now; detection with Local still errors until the
+                      inference path is wired.
+                    </p>
+                  </SettingsNotice>
                 </div>
               )}
 
               {cfg.ai.source === 'external' && (
-                <div className="space-y-2">
+                <div className="mt-6 space-y-3">
                   <label className="flex items-center gap-2 text-xs">
                     <Switch
                       checked={cfg.ai.external.same_as_summary}
@@ -211,60 +216,106 @@ export function ParticipantDetectionSettings() {
                   )}
                 </div>
               )}
-            </fieldset>
+            </div>
           )}
 
           {cfg.mode !== 'ai' && (
-            <fieldset className="space-y-2 border rounded-md p-3">
-              <legend className="px-1 text-xs font-medium text-muted-foreground">
-                Integrated (Beta)
-              </legend>
+            <SettingsInset className="space-y-2">
+              <SettingsSubsectionTitle>Integrated (Beta)</SettingsSubsectionTitle>
               <p className="text-[11px] text-muted-foreground">
                 Reads Teams / Zoom / Meet app state directly. Fast and private but may break when
                 those apps release a major update.
               </p>
-              {statuses.map((s) => (
-                <div key={s.id} className="flex items-center justify-between text-xs">
-                  <div className="flex items-center gap-2">
-                    <span className="capitalize font-medium">
-                      {s.id === 'teams'
-                        ? 'Microsoft Teams'
-                        : s.id === 'zoom'
-                          ? 'Zoom'
-                          : 'Google Meet'}
-                    </span>
+              {integratedStatuses.map((s) => (
+                <div key={s.id} className="grid grid-cols-[8rem_1fr] items-start gap-2 text-xs">
+                  <span className="font-medium">{adapterLabel(s.id)}</span>
+                  <div className="min-w-0">
                     <StatusBadge status={s.status} />
                   </div>
                 </div>
               ))}
-            </fieldset>
+            </SettingsInset>
           )}
         </>
       )}
-    </div>
+    </SettingsPanel>
   );
+}
+
+const ADAPTER_ORDER: AdapterStatusReport['id'][] = ['teams', 'zoom', 'meet'];
+
+function summarizeAdapterStatuses(statuses: AdapterStatusReport[]) {
+  const strongestById = new Map<AdapterStatusReport['id'], AdapterStatusReport>();
+
+  for (const status of statuses) {
+    const current = strongestById.get(status.id);
+    if (!current || statusPriority(status.status) > statusPriority(current.status)) {
+      strongestById.set(status.id, status);
+    }
+  }
+
+  return ADAPTER_ORDER
+    .map((id) => strongestById.get(id))
+    .filter((status): status is AdapterStatusReport => Boolean(status));
+}
+
+function statusPriority(status: AdapterStatusReport['status']) {
+  switch (status.state) {
+    case 'ready':
+      return 4;
+    case 'error':
+      return 3;
+    case 'unsupported':
+      return 2;
+    case 'not_detected':
+      return 1;
+  }
+}
+
+function adapterLabel(id: AdapterStatusReport['id']) {
+  switch (id) {
+    case 'teams':
+      return 'Microsoft Teams';
+    case 'zoom':
+      return 'Zoom';
+    case 'meet':
+      return 'Google Meet';
+  }
 }
 
 function StatusBadge({ status }: { status: AdapterStatusReport['status'] }) {
   let label = '';
   let color = '';
+  let title: string | undefined;
+
   switch (status.state) {
     case 'ready':
       label = 'Ready';
-      color = 'text-green-600';
+      color = 'bg-green-50 text-green-700';
       break;
     case 'not_detected':
       label = 'Not detected';
-      color = 'text-gray-500';
+      color = 'bg-gray-100 text-gray-600';
       break;
     case 'unsupported':
-      label = status.reason;
-      color = 'text-amber-600';
+      label = status.reason.toLowerCase().includes('browser extension')
+        ? 'Extension required'
+        : 'Unsupported';
+      color = 'bg-amber-50 text-amber-700';
+      title = status.reason;
       break;
     case 'error':
-      label = status.message;
-      color = 'text-red-600';
+      label = 'Error';
+      color = 'bg-red-50 text-red-700';
+      title = status.message;
       break;
   }
-  return <span className={`${color} text-[11px]`}>{label}</span>;
+  return (
+    <span
+      className={`${color} inline-flex max-w-full rounded-full px-2 py-0.5 text-[11px] font-medium`}
+      title={title}
+    >
+      {label}
+    </span>
+  );
 }

@@ -10,6 +10,10 @@ pub mod devices;
 pub mod capture;
 pub mod permissions;
 
+// OS-level microphone mute detection + per-app WASAPI session enumeration.
+pub mod mic_mute;
+pub mod sessions;
+
 // NEW: Device detection and diagnostics for adaptive buffering
 pub mod device_detection;
 pub mod diagnostics;
@@ -74,7 +78,8 @@ pub use system_detector::{
 // Export system audio commands
 pub use system_audio_commands::{
     start_system_audio_capture_command, list_system_audio_devices_command,
-    check_system_audio_permissions_command, start_system_audio_monitoring,
+    check_system_audio_permissions_command, get_audio_detection_snapshot,
+    get_system_audio_using_apps, start_system_audio_monitoring,
     stop_system_audio_monitoring, get_system_audio_monitoring_status,
     init_system_audio_state
 };
@@ -118,4 +123,3 @@ pub use decoder::{decode_audio_file, DecodedAudio};
 
 // Export audio constants
 pub use constants::AUDIO_EXTENSIONS;
-

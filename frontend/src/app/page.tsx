@@ -263,8 +263,11 @@ export default function Home() {
           sidebarCollapsed={sidebarCollapsed}
         />
 
-        {/* Meeting-app + detection-method status, locked at recording start */}
-        <RecordingMeetingAppStatus visible={recordingState.isRecording} />
+        {/* Recording, audio, and meeting detection status */}
+        <RecordingMeetingAppStatus
+          isRecording={recordingState.isRecording}
+          selectedDevices={selectedDevices}
+        />
 
         {/* Live participant detection status — only while recording */}
         <LiveParticipantStatus

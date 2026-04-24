@@ -32,11 +32,11 @@ function BannerContent() {
       data-tauri-drag-region
     >
       <div
-        className="flex items-center gap-3 bg-[#1a1a2e] text-white rounded-full pl-4 pr-2 py-2 border border-white/10"
+        className="flex items-center gap-3 bg-white text-slate-900 rounded-full pl-4 pr-2 py-2 border border-slate-200 shadow-lg"
         style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
       >
         {/* App icon */}
-        <div className="flex-shrink-0 w-9 h-9 rounded-full bg-white/10 flex items-center justify-center">
+        <div className="flex-shrink-0 w-9 h-9 rounded-full bg-slate-100 flex items-center justify-center">
           <img
             src="/redgator-icon.png"
             alt="Redgator"
@@ -47,10 +47,10 @@ function BannerContent() {
 
         {/* Text */}
         <div className="flex flex-col leading-tight mr-1">
-          <span className="text-[13px] font-semibold whitespace-nowrap">
-            Start AI Meeting Note
+          <span className="text-[13px] font-semibold whitespace-nowrap text-slate-900">
+            Start AI Notes
           </span>
-          <span className="text-[11px] text-gray-400 whitespace-nowrap">
+          <span className="text-[11px] text-slate-500 whitespace-nowrap">
             {appName} meeting detected
           </span>
         </div>
@@ -68,10 +68,10 @@ function BannerContent() {
         {/* Dismiss */}
         <button
           onClick={handleDismiss}
-          className="flex-shrink-0 p-1.5 rounded-full hover:bg-white/10 transition-colors cursor-pointer"
+          className="flex-shrink-0 p-1.5 rounded-full hover:bg-slate-100 transition-colors cursor-pointer"
           style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
         >
-          <X className="w-4 h-4 text-gray-400" />
+          <X className="w-4 h-4 text-slate-500" />
         </button>
       </div>
     </div>
