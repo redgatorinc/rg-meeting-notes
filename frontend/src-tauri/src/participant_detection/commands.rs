@@ -114,29 +114,35 @@ fn build_adapters() -> Vec<Box<dyn IntegratedAdapter>> {
 // Detection
 // ---------------------------------------------------------------------------
 
+/// Run detection now. `meeting_id` is optional — when provided, the
+/// backend will auto-rename a single unnamed speaker cluster in that
+/// meeting from `current_speaker`. When `None` (live from the Home
+/// screen before any meeting row is finalised) the result is returned
+/// without touching the DB so the floating status card can just show it.
 #[tauri::command]
 pub async fn participant_detect_snapshot<R: Runtime>(
     app: AppHandle<R>,
     state: State<'_, AppState>,
-    meeting_id: String,
+    meeting_id: Option<String>,
 ) -> Result<DetectionResult, String> {
     let cfg = config::load(&app);
     if !cfg.enabled {
         return Err("Participant detection is disabled. Enable it in Settings → Transcription → Participants Detection.".to_string());
     }
 
+    let mid = meeting_id.as_deref();
     match cfg.mode {
-        DetectionMode::Integrated => run_integrated(&cfg, &state, &meeting_id).await,
-        DetectionMode::Ai => run_ai(&app, &state, &meeting_id, &cfg).await,
+        DetectionMode::Integrated => run_integrated(&cfg, &state, mid).await,
+        DetectionMode::Ai => run_ai(&app, &state, mid, &cfg).await,
         DetectionMode::IntegratedWithAiFallback => {
-            match run_integrated(&cfg, &state, &meeting_id).await {
+            match run_integrated(&cfg, &state, mid).await {
                 Ok(result) => Ok(result),
                 Err(err) => {
                     log::info!(
                         "Integrated detection failed ({}); falling back to AI path",
                         err
                     );
-                    run_ai(&app, &state, &meeting_id, &cfg).await
+                    run_ai(&app, &state, mid, &cfg).await
                 }
             }
         }
@@ -146,7 +152,7 @@ pub async fn participant_detect_snapshot<R: Runtime>(
 async fn run_integrated(
     cfg: &ParticipantDetectionConfig,
     state: &State<'_, AppState>,
-    meeting_id: &str,
+    meeting_id: Option<&str>,
 ) -> Result<DetectionResult, String> {
     if !cfg.integrated.enabled {
         return Err("Integrated detection is disabled in settings.".to_string());
@@ -178,7 +184,9 @@ async fn run_integrated(
                     provider_host: snapshot.source,
                     source_app: adapter.id().to_string(),
                 };
-                auto_rename_if_single(state, meeting_id, &result).await?;
+                if let Some(mid) = meeting_id {
+                    auto_rename_if_single(state, mid, &result).await?;
+                }
                 return Ok(result);
             }
             Err(e) => last_err = Some(format!("{}: {}", adapter.id(), e)),
@@ -189,9 +197,9 @@ async fn run_integrated(
 }
 
 async fn run_ai<R: Runtime>(
-    app: &AppHandle<R>,
+    _app: &AppHandle<R>,
     state: &State<'_, AppState>,
-    meeting_id: &str,
+    meeting_id: Option<&str>,
     cfg: &ParticipantDetectionConfig,
 ) -> Result<DetectionResult, String> {
     if matches!(cfg.ai.source, AiSource::Local) {
@@ -226,7 +234,9 @@ async fn run_ai<R: Runtime>(
             .await
             .map_err(|e| e.to_string())?;
 
-    auto_rename_if_single(state, meeting_id, &result).await?;
+    if let Some(mid) = meeting_id {
+        auto_rename_if_single(state, mid, &result).await?;
+    }
     Ok(result)
 }
 
