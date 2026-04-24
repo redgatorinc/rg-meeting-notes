@@ -4,6 +4,7 @@ import { Transcript, TranscriptSegmentData } from '@/types';
 import { TranscriptView } from '@/components/TranscriptView';
 import { VirtualizedTranscriptView } from '@/components/VirtualizedTranscriptView';
 import { TranscriptButtonGroup } from './TranscriptButtonGroup';
+import { SpeakersPanel } from './SpeakersPanel';
 import { useMemo } from 'react';
 
 interface TranscriptPanelProps {
@@ -77,6 +78,14 @@ export function TranscriptPanel({
           onRefetchTranscripts={onRefetchTranscripts}
         />
       </div>
+
+      {/* Speaker diarization panel — sticky above the transcript list */}
+      {meetingId && (
+        <SpeakersPanel
+          meetingId={meetingId}
+          onSpeakersChanged={onRefetchTranscripts}
+        />
+      )}
 
       {/* Transcript content - use virtualized view for better performance */}
       <div className="flex-1 overflow-hidden pb-4">

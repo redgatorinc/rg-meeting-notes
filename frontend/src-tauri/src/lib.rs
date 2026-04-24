@@ -41,6 +41,7 @@ pub mod audio;
 pub mod config;
 pub mod console_utils;
 pub mod database;
+pub mod diarization;
 pub mod dictation;
 pub mod meeting_detector;
 pub mod notifications;
@@ -667,6 +668,12 @@ pub fn run() {
             api::api_get_custom_openai_config,
             api::api_test_custom_openai_connection,
             api::api_fetch_custom_openai_models,
+            // Speaker diarization commands
+            diarization::commands::diarization_start,
+            diarization::commands::diarization_status,
+            diarization::commands::diarization_list_packs,
+            diarization::commands::speakers_list,
+            diarization::commands::speaker_rename,
             // Summary commands
             summary::api_process_transcript,
             summary::api_get_summary,
