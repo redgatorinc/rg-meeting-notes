@@ -666,6 +666,7 @@ pub fn run() {
             api::api_save_custom_openai_config,
             api::api_get_custom_openai_config,
             api::api_test_custom_openai_connection,
+            api::api_fetch_custom_openai_models,
             // Summary commands
             summary::api_process_transcript,
             summary::api_get_summary,

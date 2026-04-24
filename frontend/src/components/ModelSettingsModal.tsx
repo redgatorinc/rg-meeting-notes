@@ -153,6 +153,11 @@ export function ModelSettingsModal({
   const [isCustomOpenAIAdvancedOpen, setIsCustomOpenAIAdvancedOpen] = useState<boolean>(false);
   const [isTestingConnection, setIsTestingConnection] = useState<boolean>(false);
 
+  // Custom OpenAI: fetched models list + input mode toggle (select fetched vs free-text)
+  const [customOpenAIModels, setCustomOpenAIModels] = useState<string[]>([]);
+  const [isFetchingCustomModels, setIsFetchingCustomModels] = useState<boolean>(false);
+  const [customModelInputMode, setCustomModelInputMode] = useState<'select' | 'input'>('input');
+
   // Combobox state
   const [modelComboboxOpen, setModelComboboxOpen] = useState<boolean>(false);
 
@@ -960,14 +965,75 @@ export function ModelSettingsModal({
             </div>
 
             <div>
-              <Label htmlFor="custom-model">Model Name *</Label>
-              <Input
-                id="custom-model"
-                value={customOpenAIModel}
-                onChange={(e) => setCustomOpenAIModel(e.target.value)}
-                placeholder="gpt-4, llama-3-70b, etc."
-                className="mt-1"
-              />
+              <div className="flex items-center justify-between gap-2">
+                <Label htmlFor="custom-model">Model Name *</Label>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (!customOpenAIEndpoint.trim()) {
+                        toast.error('Enter Endpoint URL first');
+                        return;
+                      }
+                      setIsFetchingCustomModels(true);
+                      try {
+                        const ids = await invoke<string[]>('api_fetch_custom_openai_models', {
+                          endpoint: customOpenAIEndpoint.trim(),
+                          apiKey: customOpenAIApiKey.trim() || null,
+                        });
+                        setCustomOpenAIModels(ids);
+                        setCustomModelInputMode('select');
+                        if (ids.length && !ids.includes(customOpenAIModel)) {
+                          setCustomOpenAIModel(ids[0]);
+                        }
+                        toast.success(`Loaded ${ids.length} model(s)`);
+                      } catch (err: any) {
+                        toast.error(typeof err === 'string' ? err : err?.message || 'Failed to fetch models');
+                      } finally {
+                        setIsFetchingCustomModels(false);
+                      }
+                    }}
+                    disabled={isFetchingCustomModels || !customOpenAIEndpoint.trim()}
+                    className="text-xs text-primary hover:underline disabled:opacity-50 disabled:no-underline inline-flex items-center gap-1"
+                    title="GET {endpoint}/models"
+                  >
+                    <RefreshCw className={cn('h-3 w-3', isFetchingCustomModels && 'animate-spin')} />
+                    {isFetchingCustomModels ? 'Fetching...' : 'Fetch models'}
+                  </button>
+                  {customOpenAIModels.length > 0 && (
+                    <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                      <span>Input</span>
+                      <Switch
+                        checked={customModelInputMode === 'select'}
+                        onCheckedChange={(v) => setCustomModelInputMode(v ? 'select' : 'input')}
+                      />
+                      <span>Select</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+              {customModelInputMode === 'select' && customOpenAIModels.length > 0 ? (
+                <Select value={customOpenAIModel} onValueChange={setCustomOpenAIModel}>
+                  <SelectTrigger id="custom-model" className="mt-1">
+                    <SelectValue placeholder="Select a model" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {customOpenAIModels.map((id) => (
+                      <SelectItem key={id} value={id}>
+                        {id}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Input
+                  id="custom-model"
+                  value={customOpenAIModel}
+                  onChange={(e) => setCustomOpenAIModel(e.target.value)}
+                  placeholder="gpt-4, llama-3-70b, etc."
+                  className="mt-1"
+                />
+              )}
               <p className="text-xs text-muted-foreground mt-1">
                 Model identifier to use for requests
               </p>
