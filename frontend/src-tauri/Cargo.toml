@@ -132,8 +132,10 @@ qwen3-asr-sys = { path = "qwen3-asr-sys", optional = true }
 # enabled by the `diarization-onnx` feature. Default build uses the
 # stub engine in `diarization::engine` and doesn't pull this in.
 # Official sherpa-onnx Rust bindings (replaces the deprecated sherpa-rs crate).
-# Ships newer bundled C++ with the show-info.cmake fix that broke cmake 4.x builds.
-sherpa-onnx = { version = "0.1", optional = true, default-features = false }
+# Defaults include `download-binaries` which grabs prebuilt sherpa-onnx-c-api
+# libs from the crate's release storage — without it the linker can't find
+# `sherpa-onnx-c-api.lib` on Windows.
+sherpa-onnx = { version = "0.1", optional = true, features = ["download-binaries"] }
 
 # Async
 tokio = { version = "1.32.0", features = ["full", "tracing"] }
