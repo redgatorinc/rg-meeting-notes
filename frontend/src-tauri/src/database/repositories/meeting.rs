@@ -341,6 +341,22 @@ async fn delete_meeting_with_transaction(
         .execute(&mut *transaction)
         .await?;
 
+    // 3c. Diarization-v2 auxiliary tables (migration 20260425000000). These
+    // have FK ON DELETE CASCADE, but we delete explicitly to match the rest
+    // of this function's style and keep a single audit trail in the log.
+    sqlx::query("DELETE FROM diarization_runs WHERE meeting_id = ?")
+        .bind(meeting_id)
+        .execute(&mut *transaction)
+        .await?;
+    sqlx::query("DELETE FROM meeting_participants WHERE meeting_id = ?")
+        .bind(meeting_id)
+        .execute(&mut *transaction)
+        .await?;
+    sqlx::query("DELETE FROM speaker_name_candidates WHERE meeting_id = ?")
+        .bind(meeting_id)
+        .execute(&mut *transaction)
+        .await?;
+
     // 4. Finally, delete the meeting
     let result = sqlx::query("DELETE FROM meetings WHERE id = ?")
         .bind(meeting_id)

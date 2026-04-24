@@ -17,6 +17,7 @@ import {
   SettingsTogglePanel,
 } from "@/components/settings/SettingsPanel"
 import { setUserDisplayName, useUserDisplayName } from "@/hooks/useUserDisplayName"
+import { useAutoDiarizeOnStop } from "@/hooks/useAutoDiarizeOnStop"
 
 export function PreferenceSettings() {
   const {
@@ -29,6 +30,7 @@ export function PreferenceSettings() {
 
   const [notificationsEnabled, setNotificationsEnabled] = useState<boolean | null>(null);
   const [meetingDetectionEnabled, setMeetingDetectionEnabled] = useState<boolean>(true);
+  const [autoDiarize, setAutoDiarize] = useAutoDiarizeOnStop();
   const storedDisplayName = useUserDisplayName();
   const [displayNameInput, setDisplayNameInput] = useState<string>('');
   const [displayNameSyncedFromStore, setDisplayNameSyncedFromStore] = useState(false);
@@ -228,6 +230,12 @@ export function PreferenceSettings() {
         title="Auto-detect Meeting Apps"
         description="Show a notification when Zoom, Teams, or other meeting apps are running."
         control={<Switch checked={meetingDetectionEnabled} onCheckedChange={handleMeetingDetectionChange} />}
+      />
+
+      <SettingsTogglePanel
+        title="Auto-diarize after recording"
+        description="When a recording stops, automatically split the audio into speakers in the background. Uses the diarization model pack selected in Settings → Diarization."
+        control={<Switch checked={autoDiarize} onCheckedChange={(v) => void setAutoDiarize(v)} />}
       />
 
       {/* Data Storage Locations Section */}
