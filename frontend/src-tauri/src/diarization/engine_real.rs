@@ -66,7 +66,7 @@ pub fn diarize_audio(
     let decoded =
         decode_audio_file(audio_path).context("failed to decode audio file")?;
     let mono: Vec<f32> = if decoded.channels > 1 {
-        audio_to_mono(&decoded.samples, decoded.channels as usize)
+        audio_to_mono(&decoded.samples, decoded.channels as u16)
     } else {
         decoded.samples
     };
@@ -156,12 +156,12 @@ fn run_sherpa_pipeline(
     let config = OfflineSpeakerDiarizationConfig {
         segmentation: OfflineSpeakerSegmentationModelConfig {
             pyannote: OfflineSpeakerSegmentationPyannoteModelConfig {
-                model: seg_path.to_string_lossy().into_owned(),
+                model: Some(seg_path.to_string_lossy().into_owned()),
             },
             ..Default::default()
         },
         embedding: SpeakerEmbeddingExtractorConfig {
-            model: emb_path.to_string_lossy().into_owned(),
+            model: Some(emb_path.to_string_lossy().into_owned()),
             ..Default::default()
         },
         clustering: FastClusteringConfig {
@@ -171,8 +171,8 @@ fn run_sherpa_pipeline(
         ..Default::default()
     };
 
-    let sd = OfflineSpeakerDiarization::new(&config)
-        .map_err(|e| anyhow!("OfflineSpeakerDiarization::new failed: {:?}", e))?;
+    let sd = OfflineSpeakerDiarization::create(&config)
+        .ok_or_else(|| anyhow!("OfflineSpeakerDiarization::create returned None — check model paths and that the build linked sherpa-onnx native libs"))?;
 
     let result = sd
         .process(samples)
