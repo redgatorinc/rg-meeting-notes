@@ -81,7 +81,8 @@ bool qwen3_asr_load_model(qwen3_asr_context* ctx, const char* model_path) {
     FILE* f = fopen(model_path, "rb");
     if (!f) return false;
 
-    // Check GGUF magic header: 0x46475547 ("GGUF" in little-endian)
+    // Check GGUF magic header: bytes 'G','G','U','F' = 0x47,0x47,0x55,0x46
+    // Read as little-endian u32 -> 0x46554747. Must match qwen_asr_engine.rs.
     uint32_t magic = 0;
     if (fread(&magic, sizeof(magic), 1, f) != 1) {
         fclose(f);
@@ -89,7 +90,7 @@ bool qwen3_asr_load_model(qwen3_asr_context* ctx, const char* model_path) {
     }
     fclose(f);
 
-    if (magic != 0x46475547) {
+    if (magic != 0x46554747) {
         return false;  // Not a valid GGUF file
     }
 
