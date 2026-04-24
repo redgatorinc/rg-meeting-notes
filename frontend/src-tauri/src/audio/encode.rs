@@ -47,7 +47,7 @@ pub fn encode_single_audio(
             "-c:a",
             "aac",
             "-b:a",
-            "192k", // Increased from 64k for better audio quality (especially for speech)
+            "256k", // 256k AAC-LC is near-transparent for speech and preserves dynamics (prior 192k was audibly lossy).
             "-profile:a",
             "aac_low", // Use AAC-LC profile for better compatibility
             "-movflags",

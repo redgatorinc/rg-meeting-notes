@@ -293,16 +293,23 @@ impl AudioCapture {
                 Some(filter)
             };
 
-            // Initialize EBU R128 normalizer (professional loudness standard)
-            let norm = match LoudnessNormalizer::new(1, TARGET_SAMPLE_RATE) {
-                Ok(normalizer) => {
-                    info!("✅ EBU R128 normalizer initialized for microphone '{}' (target: -23 LUFS)", device.name);
-                    Some(normalizer)
+            // Initialize EBU R128 normalizer (professional loudness standard), gated by a flag.
+            // Default-disabled to preserve natural dynamics in the recording (cumulative
+            // -23 LUFS normalization flattens speech and amplifies background noise).
+            let norm = if super::ffmpeg_mixer::EBU_R128_APPLY_ENABLED {
+                match LoudnessNormalizer::new(1, TARGET_SAMPLE_RATE) {
+                    Ok(normalizer) => {
+                        info!("✅ EBU R128 normalizer initialized for microphone '{}' (target: -23 LUFS)", device.name);
+                        Some(normalizer)
+                    }
+                    Err(e) => {
+                        warn!("⚠️ Failed to create normalizer for microphone: {}, normalization disabled", e);
+                        None
+                    }
                 }
-                Err(e) => {
-                    warn!("⚠️ Failed to create normalizer for microphone: {}, normalization disabled", e);
-                    None
-                }
+            } else {
+                info!("ℹ️ EBU R128 normalization DISABLED for microphone '{}' (flag: EBU_R128_APPLY_ENABLED=false)", device.name);
+                None
             };
 
             (ns, hpf, norm)
@@ -555,17 +562,22 @@ impl AudioCapture {
                 }
             }
 
-            // STEP 3: Apply EBU R128 normalization (professional loudness standard)
-            if let Ok(mut normalizer_lock) = self.normalizer.lock() {
-                if let Some(ref mut normalizer) = *normalizer_lock {
-                    mono_data = normalizer.normalize_loudness(&mono_data);
+            // STEP 3: Apply EBU R128 normalization (professional loudness standard).
+            // Gated by EBU_R128_APPLY_ENABLED for symmetry with the RNNoise gate above;
+            // the `normalizer` field is already None when the flag is off, so this is
+            // defense-in-depth + avoids even taking the mutex.
+            if super::ffmpeg_mixer::EBU_R128_APPLY_ENABLED {
+                if let Ok(mut normalizer_lock) = self.normalizer.lock() {
+                    if let Some(ref mut normalizer) = *normalizer_lock {
+                        mono_data = normalizer.normalize_loudness(&mono_data);
 
-                    // Log normalization occasionally for debugging
-                    let chunk_id = self.chunk_counter.load(std::sync::atomic::Ordering::SeqCst);
-                    if chunk_id % 200 == 0 && !mono_data.is_empty() {
-                        let rms = (mono_data.iter().map(|&x| x * x).sum::<f32>() / mono_data.len() as f32).sqrt();
-                        let peak = mono_data.iter().map(|&x| x.abs()).fold(0.0f32, f32::max);
-                        debug!("🎤 After normalization chunk {}: RMS={:.4}, Peak={:.4}", chunk_id, rms, peak);
+                        // Log normalization occasionally for debugging
+                        let chunk_id = self.chunk_counter.load(std::sync::atomic::Ordering::SeqCst);
+                        if chunk_id % 200 == 0 && !mono_data.is_empty() {
+                            let rms = (mono_data.iter().map(|&x| x * x).sum::<f32>() / mono_data.len() as f32).sqrt();
+                            let peak = mono_data.iter().map(|&x| x.abs()).fold(0.0f32, f32::max);
+                            debug!("🎤 After normalization chunk {}: RMS={:.4}, Peak={:.4}", chunk_id, rms, peak);
+                        }
                     }
                 }
             }
