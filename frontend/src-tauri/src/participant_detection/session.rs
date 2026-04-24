@@ -59,6 +59,7 @@ pub fn detect_and_lock<R: Runtime>(app: &AppHandle<R>) -> ActiveSession {
     let cfg = config::load(app);
 
     let adapters: Vec<Box<dyn IntegratedAdapter>> = vec![
+        Box::new(super::adapters::teams_uia::TeamsUiaAdapter::new()),
         Box::new(TeamsLogsAdapter::new()),
         Box::new(ZoomLogsAdapter::new()),
         Box::new(MeetStubAdapter::new()),

@@ -10,6 +10,7 @@
 
 pub mod meet_stub;
 pub mod teams_logs;
+pub mod teams_uia;
 pub mod zoom_logs;
 
 use serde::{Deserialize, Serialize};

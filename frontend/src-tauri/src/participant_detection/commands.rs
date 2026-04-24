@@ -20,8 +20,8 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Runtime, State};
 
 use super::adapters::{
-    meet_stub::MeetStubAdapter, teams_logs::TeamsLogsAdapter, zoom_logs::ZoomLogsAdapter,
-    AdapterStatus, IntegratedAdapter,
+    meet_stub::MeetStubAdapter, teams_logs::TeamsLogsAdapter, teams_uia::TeamsUiaAdapter,
+    zoom_logs::ZoomLogsAdapter, AdapterStatus, IntegratedAdapter,
 };
 use super::config::{self, AdapterMethod, AiSource, DetectionMode, ParticipantDetectionConfig};
 use super::{vision_client, window_capture, DetectionResult, Participant};
@@ -108,7 +108,11 @@ pub async fn participant_adapter_statuses() -> Result<Vec<AdapterStatusReport>, 
 }
 
 fn build_adapters() -> Vec<Box<dyn IntegratedAdapter>> {
+    // Order matters: the session picks the first Ready one. Teams UIA
+    // goes before Teams log_tail because the accessibility tree is
+    // much more reliable than log parsing.
     vec![
+        Box::new(TeamsUiaAdapter::new()),
         Box::new(TeamsLogsAdapter::new()),
         Box::new(ZoomLogsAdapter::new()),
         Box::new(MeetStubAdapter::new()),
