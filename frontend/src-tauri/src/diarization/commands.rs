@@ -100,10 +100,21 @@ pub async fn diarization_start<R: Runtime>(
         return Ok(Vec::new());
     }
 
-    // Stub: split by simple hash into 2 clusters for single-mic meetings,
-    // or 3 if there are enough distinct rows. Real engine will decide.
-    let max_clusters = if transcripts.len() >= 6 { 3 } else { 2 };
-    let (clusters, assignments) = Engine::diarize(&transcripts, pack, max_clusters);
+    // Real ONNX pipeline when the `diarization-onnx` feature is on AND
+    // we can resolve the meeting's audio file. Falls back to the
+    // stub if either check fails — keeps existing recordings without
+    // a saved audio.mp4 still able to produce the live-mic/live-system
+    // split the stub provides.
+    let (clusters, assignments) = {
+        let real_output = real_engine_run(pool, &meeting_id, pack, &transcripts).await;
+        match real_output {
+            Some(result) => result,
+            None => {
+                let max_clusters = if transcripts.len() >= 6 { 3 } else { 2 };
+                Engine::diarize(&transcripts, pack, max_clusters)
+            }
+        }
+    };
 
     let new_rows: Vec<NewSpeaker> = clusters
         .iter()
@@ -401,4 +412,75 @@ pub async fn diarization_apply_names(
     }
 
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Real-engine bridge. Gated behind the `diarization-onnx` Cargo feature so
+// default builds still compile without the sherpa-rs native binaries.
+// ---------------------------------------------------------------------------
+
+#[cfg(feature = "diarization-onnx")]
+async fn real_engine_run(
+    pool: &sqlx::SqlitePool,
+    meeting_id: &str,
+    pack: ModelPack,
+    transcripts: &[crate::database::models::Transcript],
+) -> Option<(Vec<super::engine::Cluster>, Vec<super::engine::Assignment>)> {
+    // Look up the meeting's recording folder; without it we can't decode.
+    let folder_path: Option<String> = sqlx::query_scalar(
+        "SELECT folder_path FROM meetings WHERE id = ?",
+    )
+    .bind(meeting_id)
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten()
+    .flatten();
+
+    let Some(folder) = folder_path else {
+        log::info!("real_engine: meeting has no folder_path, falling back to stub");
+        return None;
+    };
+    let audio_path = std::path::PathBuf::from(&folder).join("audio.mp4");
+    if !audio_path.is_file() {
+        log::info!(
+            "real_engine: {} missing, falling back to stub",
+            audio_path.display()
+        );
+        return None;
+    }
+
+    // Heavy work — run on a blocking pool so we don't stall the tokio
+    // runtime with pyannote's synchronous ONNX pipeline.
+    let audio_path_owned = audio_path.clone();
+    let transcripts_owned = transcripts.to_vec();
+    let joined = tokio::task::spawn_blocking(move || {
+        super::engine_real::diarize_audio(&audio_path_owned, pack, &transcripts_owned)
+    })
+    .await;
+
+    match joined {
+        Ok(Ok(result)) => Some(result),
+        Ok(Err(e)) => {
+            log::warn!("real_engine: pipeline failed, falling back to stub: {}", e);
+            None
+        }
+        Err(join_err) => {
+            log::warn!(
+                "real_engine: blocking task panicked ({}), falling back to stub",
+                join_err
+            );
+            None
+        }
+    }
+}
+
+#[cfg(not(feature = "diarization-onnx"))]
+async fn real_engine_run(
+    _pool: &sqlx::SqlitePool,
+    _meeting_id: &str,
+    _pack: ModelPack,
+    _transcripts: &[crate::database::models::Transcript],
+) -> Option<(Vec<super::engine::Cluster>, Vec<super::engine::Assignment>)> {
+    None
 }

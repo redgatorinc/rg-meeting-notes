@@ -15,6 +15,8 @@ pub mod adapter_names;
 pub mod commands;
 pub mod cue_parser;
 pub mod engine;
+#[cfg(feature = "diarization-onnx")]
+pub mod engine_real;
 pub mod llm_namer;
 pub mod models;
 
