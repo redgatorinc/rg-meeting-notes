@@ -8,11 +8,15 @@ import { ConfidenceIndicator } from "./ConfidenceIndicator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 import { RecordingStatusBar } from "./RecordingStatusBar";
 import { motion, AnimatePresence } from "framer-motion";
-import { TranscriptSegmentData } from "@/types";
+import { Speaker, TranscriptSegmentData } from "@/types";
 
 export interface VirtualizedTranscriptViewProps {
     /** Transcript segments to display */
     segments: TranscriptSegmentData[];
+    /** Lookup from `speaker_id` to the Speaker row, for rendering
+     * `Speaker N:` / `Alice:` prefixes before each transcript line.
+     * Optional — when absent, no prefixes are rendered. */
+    speakersById?: Map<string, Speaker>;
     /** Whether recording is in progress */
     isRecording?: boolean;
     /** Whether recording is paused */
@@ -63,6 +67,14 @@ function cleanStopWords(text: string): string {
     return cleanedText.replace(/\s+/g, ' ').trim();
 }
 
+// Stable-but-cheap HSL color per cluster index so each speaker gets a
+// consistent swatch across renders. Matches `SpeakersPanel` so the swatch
+// colors line up visually.
+function colorForCluster(idx: number): string {
+    const hue = (idx * 137) % 360; // golden-angle for visual separation
+    return `hsl(${hue}, 70%, 42%)`;
+}
+
 // Memoized transcript segment component
 const TranscriptSegment = memo(function TranscriptSegment({
     id,
@@ -71,6 +83,7 @@ const TranscriptSegment = memo(function TranscriptSegment({
     confidence,
     isStreaming,
     showConfidence,
+    speaker,
 }: {
     id: string;
     timestamp: number;
@@ -78,8 +91,14 @@ const TranscriptSegment = memo(function TranscriptSegment({
     confidence?: number;
     isStreaming: boolean;
     showConfidence: boolean;
+    speaker?: Speaker;
 }) {
     const displayText = cleanStopWords(text) || (text.trim() === '' ? '[Silence]' : text);
+
+    const speakerLabel = speaker
+        ? (speaker.display_name?.trim() || `Speaker ${speaker.cluster_idx + 1}`)
+        : null;
+    const speakerColor = speaker ? colorForCluster(speaker.cluster_idx) : undefined;
 
     return (
         <div id={`segment-${id}`} className="mb-3">
@@ -99,10 +118,30 @@ const TranscriptSegment = memo(function TranscriptSegment({
                 <div className="flex-1">
                     {isStreaming ? (
                         <div className="bg-gray-100 border border-gray-200 rounded-lg px-3 py-2">
-                            <p className="text-base text-gray-800 leading-relaxed">{displayText}</p>
+                            <p className="text-base text-gray-800 leading-relaxed">
+                                {speakerLabel && (
+                                    <span
+                                        className="font-semibold mr-1.5"
+                                        style={{ color: speakerColor }}
+                                    >
+                                        {speakerLabel}:
+                                    </span>
+                                )}
+                                {displayText}
+                            </p>
                         </div>
                     ) : (
-                        <p className="text-base text-gray-800 leading-relaxed">{displayText}</p>
+                        <p className="text-base text-gray-800 leading-relaxed">
+                            {speakerLabel && (
+                                <span
+                                    className="font-semibold mr-1.5"
+                                    style={{ color: speakerColor }}
+                                >
+                                    {speakerLabel}:
+                                </span>
+                            )}
+                            {displayText}
+                        </p>
                     )}
                 </div>
             </div>
@@ -112,6 +151,7 @@ const TranscriptSegment = memo(function TranscriptSegment({
 
 export const VirtualizedTranscriptView: React.FC<VirtualizedTranscriptViewProps> = ({
     segments,
+    speakersById,
     isRecording = false,
     isPaused = false,
     isProcessing = false,
@@ -296,6 +336,11 @@ export const VirtualizedTranscriptView: React.FC<VirtualizedTranscriptViewProps>
                                         confidence={segment.confidence}
                                         isStreaming={isStreaming}
                                         showConfidence={showConfidence}
+                                        speaker={
+                                            segment.speakerId && speakersById
+                                                ? speakersById.get(segment.speakerId)
+                                                : undefined
+                                        }
                                     />
                                 </div>
                             );
@@ -352,6 +397,11 @@ export const VirtualizedTranscriptView: React.FC<VirtualizedTranscriptViewProps>
                                         confidence={segment.confidence}
                                         isStreaming={isStreaming}
                                         showConfidence={showConfidence}
+                                        speaker={
+                                            segment.speakerId && speakersById
+                                                ? speakersById.get(segment.speakerId)
+                                                : undefined
+                                        }
                                     />
                                 </motion.div>
                             );

@@ -143,4 +143,7 @@ export interface TranscriptSegmentData {
   endTime?: number; // audio_end_time in seconds
   text: string;
   confidence?: number;
+  // Speaker diarization: FK to the speakers table. The renderer looks up
+  // the display name + color via a `speakersById` map passed as a prop.
+  speakerId?: string | null;
 }
