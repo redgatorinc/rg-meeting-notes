@@ -12,6 +12,7 @@ import type {
   DetectionMode,
   ParticipantDetectionConfig,
 } from '@/types';
+import { VisionModelManager } from './VisionModelManager';
 
 /**
  * Settings → Transcription → Participants Detection.
@@ -134,30 +135,23 @@ export function ParticipantDetectionSettings() {
 
               {cfg.ai.source === 'local' && (
                 <div className="space-y-2">
-                  <Select
-                    value={cfg.ai.local.model_id ?? ''}
-                    onValueChange={(v) =>
+                  <VisionModelManager
+                    selectedId={cfg.ai.local.model_id ?? null}
+                    onSelect={(id) =>
                       persist({
                         ...cfg,
                         ai: {
                           ...cfg.ai,
-                          local: { model_id: v },
+                          local: { model_id: id },
                         },
                       })
                     }
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select a local model" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="moondream2">Moondream2 (1.7 GB)</SelectItem>
-                      <SelectItem value="smolvlm">SmolVLM-Instruct (1.9 GB)</SelectItem>
-                      <SelectItem value="phi-3.5-vision">Phi-3.5-vision (2.9 GB)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <p className="text-[11px] text-muted-foreground">
-                    Local inference ships in a follow-up — the model list above is a preview of the
-                    upcoming registry.
+                    enabled
+                  />
+                  <p className="text-[11px] text-amber-600">
+                    ⚠ Local vision inference ships in a follow-up. You can download and
+                    select models now; detection with Local still errors until the
+                    inference path is wired.
                   </p>
                 </div>
               )}

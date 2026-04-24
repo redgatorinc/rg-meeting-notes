@@ -58,6 +58,7 @@ pub mod state;
 pub mod summary;
 pub mod tray;
 pub mod utils;
+pub mod vision_model;
 pub mod whisper_engine;
 
 use audio::{list_audio_devices, AudioDevice, trigger_audio_permission};
@@ -683,6 +684,10 @@ pub fn run() {
             participant_detection::commands::participant_config_set,
             participant_detection::commands::participant_adapter_statuses,
             participant_detection::commands::participant_session_info,
+            // Vision model registry + downloader
+            vision_model::commands::vision_models_list,
+            vision_model::commands::vision_model_download,
+            vision_model::commands::vision_model_delete,
             // Summary commands
             summary::api_process_transcript,
             summary::api_get_summary,
