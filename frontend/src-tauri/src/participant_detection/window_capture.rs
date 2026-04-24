@@ -69,7 +69,7 @@ fn capture_for_app(meeting_app: &'static MeetingApp) -> Result<CapturedWindow> {
         }
     }
 
-    let window = best.ok_or_else(|| {
+    let (window, _) = best.ok_or_else(|| {
         anyhow!(
             "Found the {} process but no capturable window for it. On macOS, minimized-to-Dock windows are not capturable. Bring the window to the foreground and try again.",
             meeting_app.display_name
