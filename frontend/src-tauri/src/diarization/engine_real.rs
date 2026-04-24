@@ -179,8 +179,8 @@ fn run_sherpa_pipeline(
         .ok_or_else(|| anyhow!("sherpa-onnx process() returned None — audio likely too short or models unreadable"))?;
 
     let out = result
-        .segments()
-        .iter()
+        .sort_by_start_time()
+        .into_iter()
         .map(|s| Segment {
             start_s: s.start,
             end_s: s.end,
