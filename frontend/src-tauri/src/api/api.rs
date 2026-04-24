@@ -1381,3 +1381,84 @@ pub async fn api_test_custom_openai_connection<R: Runtime>(
         }
     }
 }
+
+#[tauri::command]
+pub async fn api_fetch_custom_openai_models<R: Runtime>(
+    _app: AppHandle<R>,
+    endpoint: String,
+    api_key: Option<String>,
+) -> Result<Vec<String>, String> {
+    log_info!("api_fetch_custom_openai_models called: endpoint='{}'", &endpoint);
+
+    if !endpoint.starts_with("http://") && !endpoint.starts_with("https://") {
+        return Err("Endpoint must start with http:// or https://".to_string());
+    }
+
+    let url = format!("{}/models", endpoint.trim_end_matches('/'));
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
+
+    let mut request = client.get(&url);
+    if let Some(key) = api_key.filter(|k| !k.trim().is_empty()) {
+        request = request.header("Authorization", format!("Bearer {}", key));
+    }
+
+    let response = request
+        .send()
+        .await
+        .map_err(|e| {
+            if e.is_timeout() {
+                "Connection timed out while listing models.".to_string()
+            } else if e.is_connect() {
+                "Could not connect to endpoint while listing models.".to_string()
+            } else {
+                format!("Request failed: {}", e)
+            }
+        })?;
+
+    let status = response.status();
+    let body = response.text().await.unwrap_or_default();
+
+    if !status.is_success() {
+        return Err(format!("GET /models failed with status {}: {}", status, body));
+    }
+
+    let json: serde_json::Value = serde_json::from_str(&body)
+        .map_err(|e| format!("Invalid JSON from /models: {}. Body: {}", e, body))?;
+
+    // OpenAI-compatible shape: { "data": [{ "id": "..." }, ...] }
+    // Some servers return a bare array of strings or { "models": [...] }.
+    let ids: Vec<String> = if let Some(arr) = json.get("data").and_then(|v| v.as_array()) {
+        arr.iter()
+            .filter_map(|item| item.get("id").and_then(|v| v.as_str()).map(String::from))
+            .collect()
+    } else if let Some(arr) = json.get("models").and_then(|v| v.as_array()) {
+        arr.iter()
+            .filter_map(|item| {
+                item.as_str()
+                    .map(String::from)
+                    .or_else(|| item.get("id").and_then(|v| v.as_str()).map(String::from))
+                    .or_else(|| item.get("name").and_then(|v| v.as_str()).map(String::from))
+            })
+            .collect()
+    } else if let Some(arr) = json.as_array() {
+        arr.iter()
+            .filter_map(|item| item.as_str().map(String::from))
+            .collect()
+    } else {
+        return Err(format!(
+            "Unrecognized /models response shape. Expected {{data: [{{id}}]}}. Body: {}",
+            body
+        ));
+    };
+
+    if ids.is_empty() {
+        return Err("Endpoint returned an empty model list.".to_string());
+    }
+
+    log_info!("api_fetch_custom_openai_models: {} model(s) returned", ids.len());
+    Ok(ids)
+}
