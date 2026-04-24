@@ -136,6 +136,62 @@ export interface PaginatedTranscriptsResponse {
   has_more: boolean;
 }
 
+// ---- Participant detection settings ----------------------------------------
+
+export type DetectionMode = 'integrated' | 'ai' | 'integrated_with_ai_fallback';
+export type AiSource = 'local' | 'external';
+export type AdapterMethod = 'log_tail' | 'a11y' | 'extension_bridge' | 'auto';
+
+export interface AdapterConfig {
+  enabled: boolean;
+  method: AdapterMethod;
+}
+
+export interface IntegratedConfig {
+  enabled: boolean;
+  teams: AdapterConfig;
+  zoom: AdapterConfig;
+  meet: AdapterConfig;
+  poll_interval_sec: number;
+}
+
+export interface ExternalAiConfig {
+  same_as_summary: boolean;
+  provider?: string | null;
+  model?: string | null;
+  has_api_key: boolean;
+}
+
+export interface LocalAiConfig {
+  model_id?: string | null;
+}
+
+export interface AiConfig {
+  source: AiSource;
+  local: LocalAiConfig;
+  external: ExternalAiConfig;
+}
+
+export interface ParticipantDetectionConfig {
+  version: number;
+  enabled: boolean;
+  mode: DetectionMode;
+  ai: AiConfig;
+  integrated: IntegratedConfig;
+  consent_accepted_at?: string | null;
+}
+
+export type AdapterStatus =
+  | { state: 'ready' }
+  | { state: 'not_detected' }
+  | { state: 'unsupported'; reason: string }
+  | { state: 'error'; message: string };
+
+export interface AdapterStatusReport {
+  id: 'teams' | 'zoom' | 'meet';
+  status: AdapterStatus;
+}
+
 // Transcript segment data for virtualized display
 export interface TranscriptSegmentData {
   id: string;

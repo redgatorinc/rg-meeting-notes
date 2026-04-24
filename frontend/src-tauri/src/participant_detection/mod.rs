@@ -11,7 +11,9 @@
 //! endpoint), one-time consent modal. Auto-trigger on `speaker-joined`
 //! and the local Moondream2 path land in follow-up PRs. See the plan file.
 
+pub mod adapters;
 pub mod commands;
+pub mod config;
 pub mod vision_client;
 pub mod window_capture;
 
