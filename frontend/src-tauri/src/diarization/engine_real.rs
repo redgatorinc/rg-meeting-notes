@@ -134,49 +134,56 @@ pub fn diarize_audio(
     Ok((clusters, assignments))
 }
 
-/// Wrap the sherpa-rs bindings. Split into its own fn so the feature gate
-/// keeps the surface of use-statements tight at the top.
+/// Wrap the official sherpa-onnx Rust bindings. Split into its own fn so
+/// the feature gate keeps the surface of use-statements tight at the top.
+///
+/// The official crate (which replaces the deprecated sherpa-rs) exposes
+/// `OfflineSpeakerDiarization` directly over the C API. Segmentation uses
+/// the pyannote model, embedding uses wespeaker / 3D-speaker, clustering
+/// uses the bundled fast-clustering implementation.
 fn run_sherpa_pipeline(
     samples: &[f32],
-    sample_rate: u32,
+    _sample_rate: u32,
     seg_path: &Path,
     emb_path: &Path,
 ) -> Result<Vec<Segment>> {
-    use sherpa_rs::diarize::{
-        ClusteringConfig, Diarize, DiarizeConfig, EmbeddingConfig, SegmentationConfig,
+    use sherpa_onnx::{
+        FastClusteringConfig, OfflineSpeakerDiarization, OfflineSpeakerDiarizationConfig,
+        OfflineSpeakerSegmentationModelConfig, OfflineSpeakerSegmentationPyannoteModelConfig,
+        SpeakerEmbeddingExtractorConfig,
     };
 
-    let config = DiarizeConfig {
-        segmentation: SegmentationConfig {
-            pyannote: seg_path.to_string_lossy().into_owned(),
+    let config = OfflineSpeakerDiarizationConfig {
+        segmentation: OfflineSpeakerSegmentationModelConfig {
+            pyannote: OfflineSpeakerSegmentationPyannoteModelConfig {
+                model: seg_path.to_string_lossy().into_owned(),
+            },
             ..Default::default()
         },
-        embedding: EmbeddingConfig {
+        embedding: SpeakerEmbeddingExtractorConfig {
             model: emb_path.to_string_lossy().into_owned(),
             ..Default::default()
         },
-        clustering: ClusteringConfig {
-            // num_clusters = -1 tells sherpa-onnx to pick with the
-            // default threshold. Users who want a specific number can
-            // override this in a future PR when the UI exposes it.
-            num_clusters: None,
-            threshold: Some(0.5),
+        clustering: FastClusteringConfig {
+            num_clusters: -1, // -1 → pick automatically via threshold
+            threshold: 0.5,
         },
         ..Default::default()
     };
 
-    let mut engine =
-        Diarize::new(config).map_err(|e| anyhow!("sherpa Diarize::new failed: {}", e))?;
+    let sd = OfflineSpeakerDiarization::new(&config)
+        .map_err(|e| anyhow!("OfflineSpeakerDiarization::new failed: {:?}", e))?;
 
-    let sherpa_segments = engine
-        .compute(samples, sample_rate as i32)
-        .map_err(|e| anyhow!("sherpa-onnx diarization failed: {}", e))?;
+    let result = sd
+        .process(samples)
+        .map_err(|e| anyhow!("sherpa-onnx diarization failed: {:?}", e))?;
 
-    let out = sherpa_segments
-        .into_iter()
+    let out = result
+        .segments()
+        .iter()
         .map(|s| Segment {
-            start_s: s.start as f32,
-            end_s: s.end as f32,
+            start_s: s.start,
+            end_s: s.end,
             cluster_idx: s.speaker as i64,
         })
         .collect();
