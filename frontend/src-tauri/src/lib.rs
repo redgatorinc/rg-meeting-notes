@@ -679,6 +679,7 @@ pub fn run() {
             diarization::commands::diarization_models_list,
             diarization::commands::diarization_model_download,
             diarization::commands::diarization_model_delete,
+            diarization::commands::diarization_engine_info,
             diarization::commands::diarization_name_candidates,
             diarization::commands::diarization_apply_names,
             diarization::commands::speakers_list,

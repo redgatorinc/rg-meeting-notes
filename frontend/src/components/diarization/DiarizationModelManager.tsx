@@ -7,6 +7,9 @@ import { Download, Trash2, CheckCircle2, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { formatBytes } from '@/lib/formatting';
 
+const STORE_FILE = 'preferences.json';
+const KEY_MODEL_PACK = 'diarization.model_pack';
+
 interface DiarizationModelInfo {
   id: string;            // 'default' | 'fast' | 'accurate'
   display_name: string;
@@ -34,6 +37,7 @@ export function DiarizationModelManager() {
   const [models, setModels] = useState<DiarizationModelInfo[]>([]);
   const [progress, setProgress] = useState<Record<string, DiarizationDownloadProgress>>({});
   const [busy, setBusy] = useState<Record<string, boolean>>({});
+  const [selectedPack, setSelectedPack] = useState<string>('default');
 
   const refresh = async () => {
     try {
@@ -44,8 +48,32 @@ export function DiarizationModelManager() {
     }
   };
 
+  const loadSelected = async () => {
+    try {
+      const { Store } = await import('@tauri-apps/plugin-store');
+      const store = await Store.load(STORE_FILE);
+      const saved = (await store.get<string>(KEY_MODEL_PACK)) ?? 'default';
+      setSelectedPack(saved);
+    } catch (err) {
+      console.warn('Failed to read diarization.model_pack:', err);
+    }
+  };
+
+  const persistSelected = async (packId: string) => {
+    setSelectedPack(packId);
+    try {
+      const { Store } = await import('@tauri-apps/plugin-store');
+      const store = await Store.load(STORE_FILE);
+      await store.set(KEY_MODEL_PACK, packId);
+      await store.save();
+    } catch (err) {
+      console.error('Failed to persist diarization.model_pack:', err);
+    }
+  };
+
   useEffect(() => {
     void refresh();
+    void loadSelected();
     const unlisteners: UnlistenFn[] = [];
 
     void listen<DiarizationDownloadProgress>(
@@ -60,7 +88,19 @@ export function DiarizationModelManager() {
         return next;
       });
       setBusy((prev) => ({ ...prev, [e.payload.pack_id]: false }));
-      void refresh();
+      void (async () => {
+        await refresh();
+        // If nothing is currently installed-and-selected, auto-select the
+        // pack that just finished downloading so the user doesn't have to
+        // hunt for the radio.
+        const installedNow = (await invoke<DiarizationModelInfo[]>('diarization_models_list')).filter(
+          (m) => m.installed,
+        );
+        const activeInstalled = installedNow.some((m) => m.id === selectedPack);
+        if (!activeInstalled) {
+          await persistSelected(e.payload.pack_id);
+        }
+      })();
     }).then((u) => unlisteners.push(u));
 
     void listen<{ pack_id: string; error: string }>('diarization-model-download-error', (e) => {
@@ -104,9 +144,27 @@ export function DiarizationModelManager() {
         const dl = progress[m.id];
         const isDownloading = !!dl || !!busy[m.id];
         const pct = dl?.percent ?? 0;
+        const isActive = selectedPack === m.id && m.installed;
 
         return (
           <div key={m.id} className="flex items-start gap-3 px-4 py-3">
+            {/* Select radio — only clickable when the pack is installed */}
+            <label
+              className={`mt-1 flex-shrink-0 ${
+                m.installed ? 'cursor-pointer' : 'cursor-not-allowed opacity-40'
+              }`}
+              title={m.installed ? 'Use this pack for diarization' : 'Download to enable'}
+            >
+              <input
+                type="radio"
+                name="diarization-pack"
+                checked={selectedPack === m.id}
+                disabled={!m.installed}
+                onChange={() => void persistSelected(m.id)}
+                className="h-4 w-4 cursor-pointer accent-blue-600"
+              />
+            </label>
+
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
                 <div className="truncate text-sm font-medium text-gray-900">
@@ -114,6 +172,11 @@ export function DiarizationModelManager() {
                 </div>
                 {m.installed && !isDownloading && (
                   <CheckCircle2 className="h-4 w-4 flex-shrink-0 text-green-600" />
+                )}
+                {isActive && (
+                  <span className="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-700">
+                    Active
+                  </span>
                 )}
               </div>
               <p className="mt-0.5 text-xs text-gray-500">{m.description}</p>
@@ -141,8 +204,8 @@ export function DiarizationModelManager() {
                   variant="outline"
                   size="sm"
                   onClick={() => void handleDelete(m.id)}
-                  disabled={isDownloading}
-                  title="Delete this pack"
+                  disabled={isDownloading || isActive}
+                  title={isActive ? 'Select another pack first' : 'Delete this pack'}
                   className="text-red-600 hover:text-red-700"
                 >
                   <Trash2 className="h-4 w-4" />

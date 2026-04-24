@@ -1,5 +1,7 @@
 'use client';
 
+import { useEffect, useState } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import { DiarizationModelManager } from '@/components/diarization/DiarizationModelManager';
 import {
   SettingsNotice,
@@ -7,6 +9,10 @@ import {
   SettingsPanelHeader,
   SettingsTabHeader,
 } from '@/components/settings/SettingsPanel';
+
+interface DiarizationEngineInfo {
+  real_engine_available: boolean;
+}
 
 /**
  * Settings tab for diarization. Hosts the model-pack manager (download /
@@ -16,12 +22,45 @@ import {
  * cross-cutting workflow toggles in one place.
  */
 export function DiarizationSettings() {
+  const [engineInfo, setEngineInfo] = useState<DiarizationEngineInfo | null>(null);
+
+  useEffect(() => {
+    let disposed = false;
+    void (async () => {
+      try {
+        const info = await invoke<DiarizationEngineInfo>('diarization_engine_info');
+        if (!disposed) setEngineInfo(info);
+      } catch {
+        if (!disposed) setEngineInfo({ real_engine_available: false });
+      }
+    })();
+    return () => {
+      disposed = true;
+    };
+  }, []);
+
+  const stubMode = engineInfo && !engineInfo.real_engine_available;
+
   return (
     <div className="space-y-6">
       <SettingsTabHeader
         title="Diarization"
         description="Split each recording into distinct speakers. Pick a model pack below — larger packs are more accurate, smaller packs are faster on CPU."
       />
+
+      {stubMode && (
+        <SettingsNotice tone="warning" className="p-3 text-xs">
+          <p className="text-xs text-amber-900">
+            <strong>Stub engine active.</strong> This build was compiled
+            without the <code>diarization-onnx</code> Cargo feature, so the
+            Diarize button currently produces a simple mic/system split
+            (1–2 clusters) instead of running the pyannote + embedding
+            pipeline. Downloading a model pack below still works, but the
+            real pipeline only runs after rebuilding with{' '}
+            <code>cargo build --features diarization-onnx</code>.
+          </p>
+        </SettingsNotice>
+      )}
 
       <SettingsPanel>
         <SettingsPanelHeader title="Model packs" className="mb-4" />

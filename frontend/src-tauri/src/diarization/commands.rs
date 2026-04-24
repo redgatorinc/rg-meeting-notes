@@ -334,6 +334,22 @@ pub async fn diarization_models_list() -> Result<Vec<DiarizationModelInfo>, Stri
     Ok(models::list_info())
 }
 
+/// Engine-capability probe for the Settings UI. Lets the tab render a
+/// "stub mode" notice when the real ONNX pipeline isn't built in.
+#[derive(serde::Serialize)]
+pub struct DiarizationEngineInfo {
+    /// True when the Cargo feature `diarization-onnx` is enabled. When
+    /// false, `diarization_start` always falls through to the stub.
+    pub real_engine_available: bool,
+}
+
+#[tauri::command]
+pub async fn diarization_engine_info() -> Result<DiarizationEngineInfo, String> {
+    Ok(DiarizationEngineInfo {
+        real_engine_available: cfg!(feature = "diarization-onnx"),
+    })
+}
+
 #[tauri::command]
 pub async fn diarization_model_download<R: Runtime>(
     app: AppHandle<R>,
