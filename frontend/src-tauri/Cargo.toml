@@ -36,7 +36,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 #   .\build-gpu.ps1 (Windows PowerShell)
 #
 [features]
-default = ["platform-default", "qwen-asr", "diarization-onnx"]  # Automatically enables best backend per platform + Qwen3-ASR + real diarization engine
+default = ["platform-default", "qwen-asr"]  # Automatically enables best backend per platform + Qwen3-ASR
 
 # Platform-appropriate defaults - see target-specific dependencies below
 platform-default = []
