@@ -14,6 +14,7 @@ import Analytics from '@/lib/analytics';
 import { useConfig } from '@/contexts/ConfigContext';
 import { RetranscribeDialog } from './RetranscribeDialog';
 import { DeleteMeetingDialog } from './DeleteMeetingDialog';
+import { DiarizationStatusChip } from '@/components/shell/DiarizationStatusChip';
 import { formatBytes, formatDate, formatDuration } from '@/lib/formatting';
 import type { MeetingListItem } from '@/types';
 
@@ -101,12 +102,15 @@ export function MeetingHeader({
         {/* Title + meta */}
         <div className="min-w-0 flex-1">
           <TitleField title={title} onChange={onTitleChange} />
-          <MetaRow
-            createdAt={createdAt}
-            durationMs={meta?.duration_ms ?? 0}
-            speakerCount={meta?.speaker_count ?? speakers.length}
-            fileSizeBytes={meta?.file_size_bytes ?? 0}
-          />
+          <div className="mt-1 flex flex-wrap items-center gap-2">
+            <MetaRow
+              createdAt={createdAt}
+              durationMs={meta?.duration_ms ?? 0}
+              speakerCount={meta?.speaker_count ?? speakers.length}
+              fileSizeBytes={meta?.file_size_bytes ?? 0}
+            />
+            <DiarizationStatusChip meetingId={meetingId} />
+          </div>
         </div>
 
         {/* Actions */}

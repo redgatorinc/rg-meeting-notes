@@ -13,6 +13,7 @@ use std::time::Duration;
 use tauri::{AppHandle, Emitter, Runtime, State};
 
 use super::engine::Engine;
+use super::models::{self, DiarizationModelInfo};
 use super::{DiarizationStatus, ModelPack, ModelPackInfo};
 use crate::database::models::Speaker;
 use crate::database::repositories::speaker::{NewSpeaker, SpeakersRepository};
@@ -164,7 +165,90 @@ pub async fn diarization_start<R: Runtime>(
         }),
     );
 
+    // Fire the three name-identification passes against the fresh clusters.
+    // Best-effort: individual failures are logged but don't fail the
+    // command. Candidates are written to `speaker_name_candidates`; the
+    // frontend listens for `diarization-name-candidates-ready`.
+    run_name_pipeline(pool, &app, &meeting_id, &transcripts, &saved).await;
+
     Ok(saved)
+}
+
+async fn run_name_pipeline<R: Runtime>(
+    pool: &sqlx::SqlitePool,
+    app: &AppHandle<R>,
+    meeting_id: &str,
+    transcripts: &[crate::database::models::Transcript],
+    speakers: &[Speaker],
+) {
+    // Clear stale candidates from a prior run for this meeting so the
+    // approval panel only shows fresh suggestions.
+    if let Err(e) =
+        crate::database::repositories::speaker::SpeakerNameCandidatesRepository::clear_for_meeting(
+            pool, meeting_id,
+        )
+        .await
+    {
+        log::warn!("name_pipeline: failed to clear prior candidates: {}", e);
+    }
+
+    // speaker_id (UUID) -> cluster_idx map, consumed by every pass.
+    let mut sid_to_cluster: std::collections::HashMap<String, i64> =
+        std::collections::HashMap::with_capacity(speakers.len());
+    for s in speakers {
+        sid_to_cluster.insert(s.id.clone(), s.cluster_idx);
+    }
+
+    // Cue parser — pure CPU, fast, deterministic.
+    let cue_candidates =
+        super::cue_parser::extract_candidates(transcripts, &sid_to_cluster);
+
+    // LLM pass — stub today (returns empty), real provider wiring in a
+    // follow-up PR.
+    let llm_candidates =
+        super::llm_namer::extract_candidates(speakers, &sid_to_cluster, transcripts).await;
+
+    // Adapter pass — reads `meeting_participants` captured at recording start.
+    let adapter_candidates =
+        super::adapter_names::extract_candidates(pool, meeting_id, speakers).await;
+
+    let total =
+        cue_candidates.len() + llm_candidates.len() + adapter_candidates.len();
+    for (cands, source) in [
+        (cue_candidates, "cue_parser"),
+        (llm_candidates, "llm"),
+        (adapter_candidates, "adapter"),
+    ] {
+        for c in cands {
+            if let Err(e) =
+                crate::database::repositories::speaker::SpeakerNameCandidatesRepository::insert(
+                    pool,
+                    meeting_id,
+                    c.cluster_idx,
+                    &c.name,
+                    source,
+                    c.confidence,
+                )
+                .await
+            {
+                log::warn!("name_pipeline: failed to insert {} candidate: {}", source, e);
+            }
+        }
+    }
+
+    log::info!(
+        "name_pipeline: wrote {} candidates for meeting {}",
+        total,
+        meeting_id
+    );
+
+    let _ = app.emit(
+        "diarization-name-candidates-ready",
+        serde_json::json!({
+            "meeting_id": meeting_id,
+            "candidate_count": total,
+        }),
+    );
 }
 
 #[tauri::command]
@@ -218,4 +302,96 @@ pub async fn speaker_rename(
     SpeakersRepository::rename(pool, &speaker_id, name_ref)
         .await
         .map_err(|e| format!("Failed to rename speaker: {}", e))
+}
+
+// ---------------------------------------------------------------------------
+// Model pack management — list / download / delete. Files land under
+// <AppData>/models/diarization/<pack-id>/. The real ONNX inference pipeline
+// consumes them; until that pipeline ships the engine stub ignores them and
+// the model manager UI is still useful to pre-download packs.
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub async fn diarization_models_list() -> Result<Vec<DiarizationModelInfo>, String> {
+    Ok(models::list_info())
+}
+
+#[tauri::command]
+pub async fn diarization_model_download<R: Runtime>(
+    app: AppHandle<R>,
+    pack: ModelPack,
+) -> Result<(), String> {
+    models::download_pack(app.clone(), pack).await.map_err(|e| {
+        let _ = app.emit(
+            "diarization-model-download-error",
+            serde_json::json!({
+                "pack_id": models::pack_spec(pack).id,
+                "error": e.to_string(),
+            }),
+        );
+        format!("Download failed: {}", e)
+    })
+}
+
+#[tauri::command]
+pub async fn diarization_model_delete(pack: ModelPack) -> Result<(), String> {
+    models::delete_pack(pack)
+        .await
+        .map_err(|e| format!("Delete failed: {}", e))
+}
+
+// ---------------------------------------------------------------------------
+// Name-candidate review surface
+// ---------------------------------------------------------------------------
+
+use crate::database::repositories::speaker::{
+    SpeakerNameCandidateRow, SpeakerNameCandidatesRepository,
+};
+
+#[tauri::command]
+pub async fn diarization_name_candidates(
+    state: State<'_, AppState>,
+    meeting_id: String,
+) -> Result<Vec<SpeakerNameCandidateRow>, String> {
+    let pool = state.db_manager.pool();
+    SpeakerNameCandidatesRepository::list_for_meeting(pool, &meeting_id)
+        .await
+        .map_err(|e| format!("Failed to list candidates: {}", e))
+}
+
+/// Apply user-approved names. `assignments` is `{cluster_idx -> display_name}`.
+/// An empty string clears any prior name back to `Speaker N`. Clears the
+/// candidates table for this meeting once applied.
+#[tauri::command]
+pub async fn diarization_apply_names(
+    state: State<'_, AppState>,
+    meeting_id: String,
+    assignments: std::collections::HashMap<i64, String>,
+) -> Result<(), String> {
+    let pool = state.db_manager.pool();
+    let speakers = SpeakersRepository::list_for_meeting(pool, &meeting_id)
+        .await
+        .map_err(|e| format!("Failed to load speakers: {}", e))?;
+
+    for s in &speakers {
+        if let Some(name) = assignments.get(&s.cluster_idx) {
+            let trimmed = name.trim();
+            let value = if trimmed.is_empty() { None } else { Some(trimmed) };
+            SpeakersRepository::rename(pool, &s.id, value)
+                .await
+                .map_err(|e| format!("Failed to rename speaker {}: {}", s.id, e))?;
+        }
+    }
+
+    if let Err(e) =
+        SpeakerNameCandidatesRepository::clear_for_meeting(pool, &meeting_id).await
+    {
+        log::warn!(
+            "apply_names: failed to clear candidates for {}: {}",
+            meeting_id,
+            e
+        );
+    }
+
+    Ok(())
 }

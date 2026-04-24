@@ -171,34 +171,10 @@ export function SpeakersPanel({ meetingId, onSpeakersChanged }: SpeakersPanelPro
             <span className="text-xs text-muted-foreground">({speakers.length})</span>
           )}
         </div>
-        <div className="flex items-center gap-2">
-          <select
-            value={selectedPack}
-            onChange={(e) => setSelectedPack(e.target.value as DiarizationModelPack)}
-            disabled={isBusy}
-            className="text-xs border border-gray-200 rounded px-1 py-0.5 bg-white"
-            title="Model pack"
-          >
-            {packs.length === 0 && <option value="default">Default</option>}
-            {packs.map((p) => (
-              <option key={p.pack} value={p.pack}>
-                {p.pack === 'default' ? 'Default' : p.pack === 'fast' ? 'Fast' : 'Accurate'}
-                {' · '}
-                {p.size_mb} MB
-              </option>
-            ))}
-          </select>
-          <button
-            type="button"
-            onClick={runDiarization}
-            disabled={isBusy}
-            className="text-xs text-primary hover:underline disabled:opacity-50 inline-flex items-center gap-1"
-            title="Run or re-run diarization"
-          >
-            <RefreshCw className={`h-3 w-3 ${isBusy ? 'animate-spin' : ''}`} />
-            {speakers.length === 0 ? 'Diarize' : 'Re-run'}
-          </button>
-        </div>
+        {/* Model pack picker + Diarize button moved to the transcript
+            action row (Diarize button) and Settings → Diarization
+            (model pack). SpeakersPanel now focuses on the cluster list
+            + inline rename. */}
       </div>
 
       {progressPct !== null && (

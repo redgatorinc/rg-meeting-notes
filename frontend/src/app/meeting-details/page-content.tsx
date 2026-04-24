@@ -9,6 +9,7 @@ import { toast } from 'sonner';
 import { TranscriptPanel } from '@/components/MeetingDetails/TranscriptPanel';
 import { SummaryPanel } from '@/components/MeetingDetails/SummaryPanel';
 import { MeetingHeader } from '@/components/MeetingDetails/MeetingHeader';
+import { NameCandidatesPanel } from '@/components/MeetingDetails/NameCandidatesPanel';
 import { ModelConfig } from '@/components/ModelSettingsModal';
 
 // Custom hooks
@@ -179,6 +180,12 @@ export default function PageContent({
         onTitleChange={meetingData.handleTitleChange}
         onOpenFolder={meetingOperations.handleOpenMeetingFolder}
         onRefetchTranscripts={onRefetchTranscripts}
+      />
+      <NameCandidatesPanel
+        meetingId={meeting.id}
+        onApplied={async () => {
+          await onRefetchTranscripts?.();
+        }}
       />
       <div className="flex flex-1 overflow-hidden">
         <TranscriptPanel

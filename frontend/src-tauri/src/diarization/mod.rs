@@ -11,8 +11,12 @@
 //! consume, so the UI written against these types does not need to change
 //! when the real engine wires in.
 
+pub mod adapter_names;
 pub mod commands;
+pub mod cue_parser;
 pub mod engine;
+pub mod llm_namer;
+pub mod models;
 
 use serde::{Deserialize, Serialize};
 

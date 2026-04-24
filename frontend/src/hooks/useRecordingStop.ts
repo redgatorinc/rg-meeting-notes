@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { listen } from '@tauri-apps/api/event';
+import { invoke } from '@tauri-apps/api/core';
 import { toast } from 'sonner';
 import { useTranscripts } from '@/contexts/TranscriptContext';
 import { useSidebar } from '@/components/Sidebar/SidebarProvider';
@@ -316,6 +317,26 @@ export function useRecordingStop(
             // Reset to IDLE after navigation
             setStatus(RecordingStatus.IDLE);
           }, 2000);
+
+          // Fire-and-forget auto-diarize. Preference lives in
+          // preferences.json → diarization.auto_on_stop. Fails silently if
+          // off, if no model pack is installed, or if the backend engine
+          // errors — the user can always retry manually from the transcript
+          // panel's Diarize icon.
+          void (async () => {
+            try {
+              const { Store } = await import('@tauri-apps/plugin-store');
+              const store = await Store.load('preferences.json');
+              const enabled = (await store.get<boolean>('diarization.auto_on_stop')) ?? false;
+              if (!enabled) return;
+              const pack =
+                (await store.get<string>('diarization.model_pack')) ?? 'default';
+              await invoke('diarization_start', { meetingId, pack });
+              console.log('[auto-diarize] triggered for', meetingId, 'pack:', pack);
+            } catch (err) {
+              console.warn('[auto-diarize] skipped:', err);
+            }
+          })();
           // Track meeting completion analytics
           try {
             // Calculate meeting duration from transcript timestamps

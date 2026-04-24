@@ -24,10 +24,22 @@ pub struct LockedAdapter {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct ParticipantSnapshot {
+    pub display_name: String,
+    pub source: String, // e.g. "teams/uia"
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct ActiveSession {
     pub meeting_id: Option<String>,
     pub locked_adapter: Option<LockedAdapter>,
     pub detected_at: DateTime<Utc>,
+    /// Captured once at recording start from the locked adapter's snapshot.
+    /// Persisted to `meeting_participants` by `save_transcript` once the
+    /// meeting row exists. Empty if the adapter gave us nothing (e.g. the
+    /// "ai" fallback or a Zoom stub).
+    #[serde(default)]
+    pub participants: Vec<ParticipantSnapshot>,
 }
 
 static ACTIVE: RwLock<Option<ActiveSession>> = RwLock::new(None);
@@ -66,6 +78,7 @@ pub fn detect_and_lock<R: Runtime>(app: &AppHandle<R>) -> ActiveSession {
     ];
 
     let mut locked: Option<LockedAdapter> = None;
+    let mut participants: Vec<ParticipantSnapshot> = Vec::new();
 
     if cfg.integrated.enabled {
         for adapter in adapters.iter() {
@@ -79,6 +92,18 @@ pub fn detect_and_lock<R: Runtime>(app: &AppHandle<R>) -> ActiveSession {
                 continue;
             }
             if matches!(adapter.status(), AdapterStatus::Ready) {
+                // Capture the participant list at lock time. Best-effort;
+                // adapter.snapshot() can fail (UIA tree race, empty roster)
+                // and that's fine — cue parser + LLM passes still run.
+                let source = format!("{}/{}", adapter.id(), "lock");
+                if let Ok(snap) = adapter.snapshot() {
+                    participants.extend(snap.participants.into_iter().map(|p| {
+                        ParticipantSnapshot {
+                            display_name: p,
+                            source: source.clone(),
+                        }
+                    }));
+                }
                 locked = Some(LockedAdapter {
                     app_id: adapter.id().to_string(),
                     app_display_name: app_display_name(adapter.id()).to_string(),
@@ -106,6 +131,7 @@ pub fn detect_and_lock<R: Runtime>(app: &AppHandle<R>) -> ActiveSession {
         meeting_id: None,
         locked_adapter: locked,
         detected_at: Utc::now(),
+        participants,
     };
 
     if let Ok(mut g) = ACTIVE.write() {

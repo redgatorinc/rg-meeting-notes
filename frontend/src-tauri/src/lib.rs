@@ -676,6 +676,11 @@ pub fn run() {
             diarization::commands::diarization_start,
             diarization::commands::diarization_status,
             diarization::commands::diarization_list_packs,
+            diarization::commands::diarization_models_list,
+            diarization::commands::diarization_model_download,
+            diarization::commands::diarization_model_delete,
+            diarization::commands::diarization_name_candidates,
+            diarization::commands::diarization_apply_names,
             diarization::commands::speakers_list,
             diarization::commands::speaker_rename,
             // AI participant detection via per-window screenshot + vision LLM

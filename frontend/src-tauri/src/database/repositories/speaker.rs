@@ -8,8 +8,100 @@
 
 use crate::database::models::Speaker;
 use chrono::Utc;
+use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 use uuid::Uuid;
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct SpeakerNameCandidateRow {
+    pub id: String,
+    pub meeting_id: String,
+    pub cluster_idx: i64,
+    pub candidate_name: String,
+    pub source: String,
+    pub confidence: f64,
+}
+
+pub struct SpeakerNameCandidatesRepository;
+
+impl SpeakerNameCandidatesRepository {
+    pub async fn insert(
+        pool: &SqlitePool,
+        meeting_id: &str,
+        cluster_idx: i64,
+        candidate_name: &str,
+        source: &str,
+        confidence: f32,
+    ) -> Result<(), sqlx::Error> {
+        let id = Uuid::new_v4().to_string();
+        sqlx::query(
+            "INSERT INTO speaker_name_candidates \
+             (id, meeting_id, cluster_idx, candidate_name, source, confidence) \
+             VALUES (?, ?, ?, ?, ?, ?)",
+        )
+        .bind(&id)
+        .bind(meeting_id)
+        .bind(cluster_idx)
+        .bind(candidate_name)
+        .bind(source)
+        .bind(confidence as f64)
+        .execute(pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn list_for_meeting(
+        pool: &SqlitePool,
+        meeting_id: &str,
+    ) -> Result<Vec<SpeakerNameCandidateRow>, sqlx::Error> {
+        sqlx::query_as::<_, SpeakerNameCandidateRow>(
+            "SELECT id, meeting_id, cluster_idx, candidate_name, source, confidence \
+             FROM speaker_name_candidates \
+             WHERE meeting_id = ? \
+             ORDER BY cluster_idx, confidence DESC",
+        )
+        .bind(meeting_id)
+        .fetch_all(pool)
+        .await
+    }
+
+    pub async fn clear_for_meeting(
+        pool: &SqlitePool,
+        meeting_id: &str,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query("DELETE FROM speaker_name_candidates WHERE meeting_id = ?")
+            .bind(meeting_id)
+            .execute(pool)
+            .await?;
+        Ok(())
+    }
+}
+
+pub struct MeetingParticipantsRepository;
+
+impl MeetingParticipantsRepository {
+    /// Best-effort insert — uses `OR IGNORE` because the PK is
+    /// (meeting_id, display_name, source) and re-captures during a
+    /// retranscribe shouldn't error.
+    pub async fn insert_many(
+        pool: &SqlitePool,
+        meeting_id: &str,
+        entries: &[(String, String)], // (display_name, source)
+    ) -> Result<(), sqlx::Error> {
+        for (name, source) in entries {
+            sqlx::query(
+                "INSERT OR IGNORE INTO meeting_participants \
+                 (meeting_id, display_name, source) VALUES (?, ?, ?)",
+            )
+            .bind(meeting_id)
+            .bind(name)
+            .bind(source)
+            .execute(pool)
+            .await?;
+        }
+        Ok(())
+    }
+}
 
 /// Row written when diarization produces a new cluster.
 pub struct NewSpeaker {

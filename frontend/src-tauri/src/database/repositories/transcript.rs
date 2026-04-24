@@ -94,6 +94,35 @@ impl TranscriptsRepository {
         // Commit the transaction
         transaction.commit().await?;
 
+        // Persist any participants the integrated adapter captured at
+        // recording start. The active-session state is cleared by
+        // recording_commands::stop_recording *after* this runs, so the
+        // read is safe. Best-effort: failures here don't invalidate the
+        // save (transcripts + meeting row are already committed).
+        if let Some(session) = crate::participant_detection::session::current() {
+            if !session.participants.is_empty() {
+                let entries: Vec<(String, String)> = session
+                    .participants
+                    .iter()
+                    .map(|p| (p.display_name.clone(), p.source.clone()))
+                    .collect();
+                if let Err(e) = crate::database::repositories::speaker::MeetingParticipantsRepository::insert_many(
+                    pool,
+                    &meeting_id,
+                    &entries,
+                )
+                .await
+                {
+                    tracing::warn!(
+                        "Failed to persist {} meeting_participants for {}: {}",
+                        entries.len(),
+                        meeting_id,
+                        e
+                    );
+                }
+            }
+        }
+
         Ok(meeting_id)
     }
 
