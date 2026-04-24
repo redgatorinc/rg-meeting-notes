@@ -176,7 +176,7 @@ fn run_sherpa_pipeline(
 
     let result = sd
         .process(samples)
-        .map_err(|e| anyhow!("sherpa-onnx diarization failed: {:?}", e))?;
+        .ok_or_else(|| anyhow!("sherpa-onnx process() returned None — audio likely too short or models unreadable"))?;
 
     let out = result
         .segments()
