@@ -4,8 +4,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { toast } from 'sonner';
-import { Check, X, Sparkles, ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
+import { Check, X, Sparkles, ChevronDown, ChevronRight, Loader2, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+
+const HIGH_CONFIDENCE_THRESHOLD = 0.7;
 
 interface NameCandidatesPanelProps {
   meetingId: string;
@@ -243,7 +245,12 @@ export function NameCandidatesPanel({ meetingId, onApplied }: NameCandidatesPane
             })}
           </div>
 
-          <div className="mt-3 flex justify-end">
+          <div className="mt-3 flex items-center justify-between gap-2">
+            <AcceptHighConfidenceButton
+              groups={groups}
+              onAcceptAll={(map) => setDecisions((prev) => ({ ...prev, ...map }))}
+              disabled={applying}
+            />
             <Button
               size="sm"
               onClick={() => void applyAll()}
@@ -262,5 +269,42 @@ export function NameCandidatesPanel({ meetingId, onApplied }: NameCandidatesPane
         </div>
       )}
     </div>
+  );
+}
+
+function AcceptHighConfidenceButton({
+  groups,
+  onAcceptAll,
+  disabled,
+}: {
+  groups: ClusterGroup[];
+  onAcceptAll: (decisions: Record<number, string>) => void;
+  disabled: boolean;
+}) {
+  const highConfGroups = groups.filter(
+    (g) => g.top.confidence >= HIGH_CONFIDENCE_THRESHOLD,
+  );
+  if (highConfGroups.length === 0) return <span />; // hold the flex slot
+
+  const handleClick = () => {
+    const map: Record<number, string> = {};
+    highConfGroups.forEach((g) => {
+      map[g.cluster_idx] = g.top.candidate_name;
+    });
+    onAcceptAll(map);
+  };
+
+  return (
+    <Button
+      size="sm"
+      variant="outline"
+      onClick={handleClick}
+      disabled={disabled}
+      className="gap-1.5 text-amber-700 hover:text-amber-800"
+      title={`Pre-accept the ${highConfGroups.length} cluster${highConfGroups.length === 1 ? '' : 's'} with ≥${Math.round(HIGH_CONFIDENCE_THRESHOLD * 100)}% confidence — you still need to click Apply`}
+    >
+      <Zap className="h-3.5 w-3.5" />
+      Accept {highConfGroups.length} high-confidence
+    </Button>
   );
 }

@@ -1,5 +1,5 @@
 import { useCallback, RefObject } from 'react';
-import { Transcript, Summary } from '@/types';
+import { Transcript, Summary, Speaker } from '@/types';
 import { BlockNoteSummaryViewRef } from '@/components/AISummary/BlockNoteSummaryView';
 import { toast } from 'sonner';
 import Analytics from '@/lib/analytics';
@@ -83,14 +83,38 @@ export function useCopyOperations({
       return `[${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}]`;
     };
 
+    // Pull speaker rows (if diarization has run) so we can prepend a
+    // display name to each line. Best-effort — silent fall-through to
+    // the unlabeled format when the command errors or no speakers exist.
+    let speakerLabelById = new Map<string, string>();
+    try {
+      const speakers = (await invokeTauri('speakers_list', {
+        meetingId: meeting.id,
+      })) as Speaker[];
+      speakers.forEach((s) => {
+        const label = s.display_name?.trim() || `Speaker ${s.cluster_idx + 1}`;
+        speakerLabelById.set(s.id, label);
+      });
+    } catch {
+      speakerLabelById = new Map();
+    }
+
+    const formatLine = (t: Transcript): string => {
+      const ts = formatTime(t.audio_start_time, t.timestamp);
+      const label = t.speaker_id ? speakerLabelById.get(t.speaker_id) : undefined;
+      return label ? `${ts} ${label}: ${t.text}  ` : `${ts} ${t.text}  `;
+    };
+
     const header = `# Transcript of the Meeting: ${meeting.id} - ${meetingTitle ?? meeting.title}\n\n`;
     const date = `## Date: ${new Date(meeting.created_at).toLocaleDateString()}\n\n`;
-    const fullTranscript = allTranscripts
-      .map(t => `${formatTime(t.audio_start_time, t.timestamp)} ${t.text}  `)
-      .join('\n');
+    const fullTranscript = allTranscripts.map(formatLine).join('\n');
 
     await navigator.clipboard.writeText(header + date + fullTranscript);
-    toast.success("Transcript copied to clipboard");
+    toast.success(
+      speakerLabelById.size > 0
+        ? `Transcript copied with ${speakerLabelById.size} speaker label${speakerLabelById.size === 1 ? '' : 's'}`
+        : 'Transcript copied to clipboard',
+    );
 
     // Track copy analytics
     const wordCount = allTranscripts
