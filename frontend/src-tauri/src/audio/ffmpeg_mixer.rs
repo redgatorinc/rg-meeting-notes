@@ -18,6 +18,7 @@ use super::device_detection::InputDeviceKind;
 
 /// Configuration flags for audio processing features
 pub const RNNOISE_APPLY_ENABLED: bool = false;  // Default: disabled (Whisper handles noise well)
+pub const EBU_R128_APPLY_ENABLED: bool = false; // Default: disabled (preserves natural dynamics in the recording)
 
 /// Timestamp for audio samples (reserved for future use)
 #[allow(dead_code)]
