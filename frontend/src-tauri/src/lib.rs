@@ -52,6 +52,7 @@ pub mod anthropic;
 pub mod groq;
 pub mod openrouter;
 pub mod parakeet_engine;
+pub mod participant_detection;
 pub mod qwen_asr_engine;
 pub mod state;
 pub mod summary;
@@ -674,6 +675,10 @@ pub fn run() {
             diarization::commands::diarization_list_packs,
             diarization::commands::speakers_list,
             diarization::commands::speaker_rename,
+            // AI participant detection via per-window screenshot + vision LLM
+            participant_detection::commands::participant_consent_get,
+            participant_detection::commands::participant_consent_set,
+            participant_detection::commands::participant_detect_snapshot,
             // Summary commands
             summary::api_process_transcript,
             summary::api_get_summary,
