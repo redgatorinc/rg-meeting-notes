@@ -1,10 +1,13 @@
 "use client";
 
-import { Transcript, TranscriptSegmentData } from '@/types';
+import { Speaker, Transcript, TranscriptSegmentData } from '@/types';
 import { TranscriptView } from '@/components/TranscriptView';
 import { VirtualizedTranscriptView } from '@/components/VirtualizedTranscriptView';
 import { TranscriptButtonGroup } from './TranscriptButtonGroup';
-import { useMemo } from 'react';
+import { SpeakersPanel } from './SpeakersPanel';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 
 interface TranscriptPanelProps {
   transcripts: Transcript[];
@@ -61,8 +64,47 @@ export function TranscriptPanel({
       endTime: t.audio_end_time,
       text: t.text,
       confidence: t.confidence,
+      speakerId: t.speaker_id ?? null,
     }));
   }, [transcripts, usePagination, segments]);
+
+  // Fetch the speakers for this meeting once + whenever diarization finishes
+  // or a rename lands, so `Speaker N:` / `Alice:` prefixes update live.
+  const [speakers, setSpeakers] = useState<Speaker[]>([]);
+  const speakersById = useMemo(() => {
+    const m = new Map<string, Speaker>();
+    speakers.forEach(s => m.set(s.id, s));
+    return m;
+  }, [speakers]);
+
+  const refetchSpeakers = useCallback(async () => {
+    if (!meetingId) return;
+    try {
+      const rows = (await invoke('speakers_list', { meetingId })) as Speaker[];
+      setSpeakers(rows);
+    } catch (err) {
+      console.error('speakers_list failed', err);
+    }
+  }, [meetingId]);
+
+  useEffect(() => {
+    void refetchSpeakers();
+  }, [refetchSpeakers]);
+
+  useEffect(() => {
+    let cleanupComplete: (() => void) | undefined;
+    (async () => {
+      cleanupComplete = await listen<{ meeting_id: string }>(
+        'diarization-complete',
+        (e) => {
+          if (!meetingId || e.payload.meeting_id === meetingId) {
+            void refetchSpeakers();
+          }
+        },
+      );
+    })();
+    return () => cleanupComplete?.();
+  }, [meetingId, refetchSpeakers]);
 
   return (
     <div className="hidden md:flex md:w-1/4 lg:w-1/3 min-w-0 border-r border-gray-200 bg-white flex-col relative shrink-0">
@@ -78,10 +120,22 @@ export function TranscriptPanel({
         />
       </div>
 
+      {/* Speaker diarization panel — sticky above the transcript list */}
+      {meetingId && (
+        <SpeakersPanel
+          meetingId={meetingId}
+          onSpeakersChanged={async () => {
+            await refetchSpeakers();
+            await onRefetchTranscripts?.();
+          }}
+        />
+      )}
+
       {/* Transcript content - use virtualized view for better performance */}
       <div className="flex-1 overflow-hidden pb-4">
         <VirtualizedTranscriptView
           segments={convertedSegments}
+          speakersById={speakersById}
           isRecording={isRecording}
           isPaused={false}
           isProcessing={false}

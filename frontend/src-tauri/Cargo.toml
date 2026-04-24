@@ -67,6 +67,12 @@ xz2 = "0.1"           # XZ decompression (Linux)
 
 
 [dependencies]
+# Per-window screenshot for AI participant detection.
+# Cross-platform: Windows PrintWindow, macOS ScreenCaptureKit/CGWindowList,
+# Linux X11/Wayland. Scoped to a single HWND/CGWindowID — never the desktop.
+xcap = "0.9"
+base64 = "0.22"
+image = { version = "0.25", default-features = false, features = ["png"] }
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 anyhow = "1.0"
@@ -190,6 +196,19 @@ whisper-rs = { version = "0.13.2", features = ["raw-api", "metal", "coreml"] }
 [target.'cfg(target_os = "windows")'.dependencies]
 whisper-rs = { version = "0.13.2", features = ["raw-api", "vulkan"] }
 futures-channel = "0.3.31"
+# Windows UIAutomation for the Teams a11y-tree participant adapter.
+uiautomation = "0.24"
+# Raw Win32 APIs: WASAPI (IAudioEndpointVolume, IAudioSessionManager2) for
+# mic-mute + per-process audio enumeration; Process/PSAPI for resolving
+# session PIDs to executable names.
+windows = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Media_Audio",
+    "Win32_Media_Audio_Endpoints",
+    "Win32_System_Com",
+    "Win32_System_ProcessStatus",
+    "Win32_System_Threading",
+] }
 
 # Linux-specific dependencies
 # Default: CPU-only build (no BLAS)

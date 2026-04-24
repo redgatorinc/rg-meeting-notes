@@ -1,9 +1,14 @@
 use log::{info, warn};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
+use std::fs;
+use std::io::{Read, Seek, SeekFrom};
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::{Duration, SystemTime};
 use sysinfo::System;
 use tauri::{AppHandle, Emitter, Manager, Runtime, WebviewUrl, WebviewWindowBuilder};
+use xcap::Window;
 
 /// Meeting detection rules.
 ///
@@ -13,10 +18,14 @@ use tauri::{AppHandle, Emitter, Manager, Runtime, WebviewUrl, WebviewWindowBuild
 /// - `meeting_indicators`: processes that only appear during an active meeting/call.
 ///   If empty, the app process itself is treated as the indicator (for apps
 ///   where the process only launches when joining a call).
-struct MeetingApp {
-    display_name: &'static str,
-    app_processes: &'static [&'static str],
-    meeting_indicators: &'static [&'static str],
+/// Static description of a supported meeting app. Visible to external
+/// modules (e.g. `participant_detection::window_capture`) which need the
+/// list of possible window-owning process names to filter the enumerated
+/// OS windows down to the meeting one.
+pub struct MeetingApp {
+    pub display_name: &'static str,
+    pub app_processes: &'static [&'static str],
+    pub meeting_indicators: &'static [&'static str],
 }
 
 const MEETING_APPS: &[MeetingApp] = &[
@@ -57,9 +66,57 @@ const MEETING_APPS: &[MeetingApp] = &[
     },
 ];
 
+const BROWSER_PROCESS_PATTERNS: &[&str] = &[
+    "arc",
+    "brave",
+    "chrome",
+    "chromium",
+    "firefox",
+    "google chrome",
+    "microsoft edge",
+    "msedge",
+    "safari",
+];
+
+const TEAMS_MEETING_WINDOW_PATTERNS: &[&str] = &[
+    "meeting",
+    "call",
+    "calling",
+    "screen sharing",
+    "share tray",
+    "meeting controls",
+    "live event",
+    "town hall",
+];
+
+const TEAMS_MEETING_LOG_PATTERNS: &[&str] = &[
+    "activespeaker",
+    "active speaker",
+    "dominantspeaker",
+    "dominant speaker",
+    "meetingstage",
+    "meeting stage",
+    "call state",
+    "callstate",
+    "joined meeting",
+    "meeting joined",
+];
+
+static GOOGLE_MEET_APP: MeetingApp = MeetingApp {
+    display_name: "Google Meet",
+    app_processes: BROWSER_PROCESS_PATTERNS,
+    meeting_indicators: &[],
+};
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MeetingAppDetected {
     pub app_name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MeetingDetectionSnapshot {
+    pub enabled: bool,
+    pub active_apps: Vec<String>,
 }
 
 pub struct MeetingDetectionState {
@@ -102,13 +159,188 @@ fn scan_active_meetings(system: &mut System) -> HashSet<String> {
         if !has_process(system, app.app_processes) {
             continue;
         }
+        if app.display_name == "Microsoft Teams" {
+            if has_teams_meeting_signal() {
+                active.insert(app.display_name.to_string());
+            }
+            continue;
+        }
         if app.meeting_indicators.is_empty() {
-            active.insert(app.display_name.to_string());
+            if has_active_meeting_window(app, &["meeting", "call"]) {
+                active.insert(app.display_name.to_string());
+            }
         } else if has_process(system, app.meeting_indicators) {
             active.insert(app.display_name.to_string());
         }
     }
+    if has_google_meet_window() {
+        active.insert("Google Meet".to_string());
+    }
     active
+}
+
+fn has_teams_meeting_signal() -> bool {
+    has_active_meeting_window_by_patterns(
+        &["microsoft teams", "ms-teams", "teams"],
+        TEAMS_MEETING_WINDOW_PATTERNS,
+    ) || has_recent_teams_meeting_log_activity()
+}
+
+fn has_active_meeting_window(app: &MeetingApp, title_patterns: &[&str]) -> bool {
+    has_active_meeting_window_by_patterns(app.app_processes, title_patterns)
+}
+
+fn has_active_meeting_window_by_patterns(owner_patterns: &[&str], title_patterns: &[&str]) -> bool {
+    let Ok(windows) = Window::all() else {
+        return false;
+    };
+
+    windows.into_iter().any(|win| {
+        let owner = win.app_name().unwrap_or_default().to_lowercase();
+        let title = win.title().unwrap_or_default().to_lowercase();
+        if title.is_empty() {
+            return false;
+        }
+        let owner_matches = owner_patterns.iter().any(|pattern| {
+            let pattern = pattern.to_lowercase();
+            owner.contains(&pattern) || title.contains(&pattern)
+        });
+        owner_matches
+            && title_patterns
+                .iter()
+                .any(|pattern| title.contains(&pattern.to_lowercase()))
+    })
+}
+
+fn has_google_meet_window() -> bool {
+    let Ok(windows) = Window::all() else {
+        return false;
+    };
+
+    windows.into_iter().any(|win| {
+        let owner = win.app_name().unwrap_or_default().to_lowercase();
+        let title = win.title().unwrap_or_default().to_lowercase();
+        let is_browser = BROWSER_PROCESS_PATTERNS
+            .iter()
+            .any(|pattern| owner.contains(pattern));
+        is_browser
+            && (title.contains("google meet")
+                || title.contains("meet.google.com")
+                || title.starts_with("meet - "))
+    })
+}
+
+fn has_recent_teams_meeting_log_activity() -> bool {
+    for path in recent_teams_log_files(8) {
+        let Ok(modified) = fs::metadata(&path).and_then(|m| m.modified()) else {
+            continue;
+        };
+        let Ok(age) = SystemTime::now().duration_since(modified) else {
+            continue;
+        };
+        if age > Duration::from_secs(120) {
+            continue;
+        }
+        let Ok(text) = tail_file(&path, 256 * 1024) else {
+            continue;
+        };
+        let text = text.to_lowercase();
+        if TEAMS_MEETING_LOG_PATTERNS
+            .iter()
+            .any(|pattern| text.contains(pattern))
+        {
+            return true;
+        }
+    }
+    false
+}
+
+fn recent_teams_log_files(max_files: usize) -> Vec<PathBuf> {
+    let mut files: Vec<(PathBuf, SystemTime)> = Vec::new();
+    for dir in teams_log_dirs() {
+        let Ok(entries) = fs::read_dir(dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_file() {
+                continue;
+            }
+            let name = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
+            if !(name.ends_with(".log") || name.ends_with(".txt")) {
+                continue;
+            }
+            let modified = entry
+                .metadata()
+                .ok()
+                .and_then(|m| m.modified().ok())
+                .unwrap_or(SystemTime::UNIX_EPOCH);
+            files.push((path, modified));
+        }
+    }
+    files.sort_by(|a, b| b.1.cmp(&a.1));
+    files
+        .into_iter()
+        .take(max_files)
+        .map(|(path, _)| path)
+        .collect()
+}
+
+fn teams_log_dirs() -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+
+    #[cfg(target_os = "windows")]
+    {
+        if let Some(local) = dirs::data_local_dir() {
+            if let Ok(read) = fs::read_dir(local.join("Packages")) {
+                for entry in read.flatten() {
+                    let name = entry.file_name();
+                    let name = name.to_string_lossy();
+                    if name.starts_with("MSTeams_") {
+                        dirs.push(entry.path().join("LocalCache/Microsoft/MSTeams/Logs"));
+                        dirs.push(entry.path().join("LocalCache/Microsoft/MSTeams/EBWebView/logs"));
+                    }
+                }
+            }
+        }
+        if let Some(roaming) = dirs::data_dir() {
+            dirs.push(roaming.join("Microsoft/Teams"));
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        if let Some(home) = dirs::home_dir() {
+            dirs.push(home.join("Library/Application Support/Microsoft/Teams"));
+            dirs.push(home.join("Library/Containers/com.microsoft.teams2/Data/Library/Application Support/com.microsoft.teams2"));
+            dirs.push(home.join("Library/Logs/Microsoft/MSTeams"));
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        if let Some(config) = dirs::config_dir() {
+            dirs.push(config.join("Microsoft/Microsoft Teams"));
+        }
+    }
+
+    dirs.into_iter().filter(|path| path.exists()).collect()
+}
+
+fn tail_file(path: &Path, max_bytes: u64) -> std::io::Result<String> {
+    let mut file = fs::File::open(path)?;
+    let len = file.metadata()?.len();
+    let start = len.saturating_sub(max_bytes);
+    file.seek(SeekFrom::Start(start))?;
+    let mut buf = Vec::with_capacity(max_bytes.min(len) as usize);
+    file.read_to_end(&mut buf)?;
+    Ok(String::from_utf8_lossy(&buf).into_owned())
+}
+
+fn active_meeting_names(system: &mut System) -> Vec<String> {
+    let mut active_apps: Vec<String> = scan_active_meetings(system).into_iter().collect();
+    active_apps.sort();
+    active_apps
 }
 
 const BANNER_WINDOW_LABEL: &str = "meeting-banner";
@@ -143,7 +375,7 @@ fn show_banner_window<R: Runtime>(app_handle: &AppHandle<R>, app_name: &str) {
         .unwrap_or(500.0);
 
     match WebviewWindowBuilder::new(app_handle, BANNER_WINDOW_LABEL, url)
-        .title("Meeting Detected")
+        .title("Start AI Notes")
         .inner_size(BANNER_WIDTH, BANNER_HEIGHT)
         .position(x, 36.0)
         .resizable(false)
@@ -194,6 +426,12 @@ pub fn start_detection_loop<R: Runtime>(app_handle: AppHandle<R>) {
             }
 
             let currently_active = scan_active_meetings(&mut system);
+            let mut active_apps: Vec<String> = currently_active.iter().cloned().collect();
+            active_apps.sort();
+            let _ = app_handle.emit("meeting-detection-updated", MeetingDetectionSnapshot {
+                enabled: true,
+                active_apps,
+            });
 
             for app in &currently_active {
                 if !known_meetings.contains(app) && !notified.contains(app) {
@@ -261,4 +499,63 @@ pub async fn get_meeting_detection_enabled<R: Runtime>(
         .try_state::<MeetingDetectionState>()
         .ok_or("MeetingDetectionState not initialized")?;
     Ok(state.is_enabled())
+}
+
+#[tauri::command]
+pub async fn current_meeting_detection<R: Runtime>(
+    app: AppHandle<R>,
+) -> Result<MeetingDetectionSnapshot, String> {
+    let state = app
+        .try_state::<MeetingDetectionState>()
+        .ok_or("MeetingDetectionState not initialized")?;
+    let enabled = state.is_enabled();
+
+    if !enabled {
+        return Ok(MeetingDetectionSnapshot {
+            enabled,
+            active_apps: Vec::new(),
+        });
+    }
+
+    let mut system = System::new();
+    Ok(MeetingDetectionSnapshot {
+        enabled,
+        active_apps: active_meeting_names(&mut system),
+    })
+}
+
+/// Return the first meeting app whose process list currently has a running
+/// match. Used by `participant_detection::window_capture` to scope the
+/// screenshot to the correct window-owning process. `None` if no known
+/// meeting app is running.
+pub fn active_meeting_app() -> Option<&'static MeetingApp> {
+    if has_google_meet_window() {
+        return Some(&GOOGLE_MEET_APP);
+    }
+
+    let mut system = System::new();
+    system.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+    for meeting_app in MEETING_APPS {
+        if !has_process(&system, meeting_app.app_processes) {
+            continue;
+        }
+        if meeting_app.display_name == "Microsoft Teams" {
+            if has_teams_meeting_signal() {
+                return Some(meeting_app);
+            }
+            continue;
+        }
+        if meeting_app.meeting_indicators.is_empty()
+            && !has_active_meeting_window(meeting_app, &["meeting", "call"])
+        {
+            continue;
+        }
+        if !meeting_app.meeting_indicators.is_empty()
+            && !has_process(&system, meeting_app.meeting_indicators)
+        {
+            continue;
+        }
+        return Some(meeting_app);
+    }
+    None
 }

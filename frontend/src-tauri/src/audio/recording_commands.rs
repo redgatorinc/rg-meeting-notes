@@ -21,6 +21,7 @@ use super::{
     DeviceEvent,
     DeviceMonitorType
 };
+use super::recording_state::{DeviceType as RecordingDeviceType, SignalStats};
 
 // Import transcription modules
 use super::transcription::{
@@ -59,6 +60,23 @@ pub struct TranscriptionStatus {
     pub chunks_in_queue: usize,
     pub is_processing: bool,
     pub last_activity_ms: u64,
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct AudioSignalStatus {
+    pub rms_level: f32,
+    pub peak_level: f32,
+    pub is_active: bool,
+    pub updated_ago_ms: u64,
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct RecordingAudioStatus {
+    pub is_recording: bool,
+    pub microphone_device: Option<String>,
+    pub system_device: Option<String>,
+    pub microphone_signal: Option<AudioSignalStatus>,
+    pub system_signal: Option<AudioSignalStatus>,
 }
 
 // ============================================================================
@@ -104,6 +122,11 @@ pub async fn start_recording_with_meeting_name<R: Runtime>(
         return Err(validation_error);
     }
     info!("✅ Transcription model validation passed");
+
+    // Detect which meeting app the user is in and lock that adapter for
+    // the rest of this session. Emits `recording-app-detected` for the UI
+    // status card.
+    let _locked = crate::participant_detection::session::detect_and_lock(&app);
 
     // Async-first approach - no more blocking operations!
     info!("🚀 Starting async recording initialization");
@@ -846,6 +869,10 @@ pub async fn stop_recording<R: Runtime>(
     info!("🔍 Setting IS_RECORDING to false");
     IS_RECORDING.store(false, Ordering::SeqCst);
 
+    // Clear the locked participant-detection adapter so the next recording
+    // re-detects instead of reusing a stale lock.
+    crate::participant_detection::session::clear();
+
     // Step 4.5: Prepare metadata for frontend (NO database save)
     // NOTE: We do NOT save to database here. The frontend will save after all transcripts are displayed.
     // This ensures the user sees all transcripts streaming in before the database save happens.
@@ -904,6 +931,44 @@ pub async fn get_transcription_status() -> TranscriptionStatus {
         is_processing: IS_RECORDING.load(Ordering::SeqCst),
         last_activity_ms: 0,
     }
+}
+
+#[tauri::command]
+pub async fn get_recording_audio_status() -> Result<RecordingAudioStatus, String> {
+    Ok(current_recording_audio_status())
+}
+
+pub fn current_recording_audio_status() -> RecordingAudioStatus {
+    let manager_guard = RECORDING_MANAGER.lock().unwrap();
+    let Some(manager) = manager_guard.as_ref() else {
+        return RecordingAudioStatus {
+            is_recording: IS_RECORDING.load(Ordering::SeqCst),
+            microphone_device: None,
+            system_device: None,
+            microphone_signal: None,
+            system_signal: None,
+        };
+    };
+    let state = manager.get_state();
+
+    RecordingAudioStatus {
+        is_recording: IS_RECORDING.load(Ordering::SeqCst),
+        microphone_device: state.get_microphone_device().map(|device| device.name.clone()),
+        system_device: state.get_system_device().map(|device| device.name.clone()),
+        microphone_signal: signal_to_status(
+            state.get_signal_stats(RecordingDeviceType::Microphone),
+        ),
+        system_signal: signal_to_status(state.get_signal_stats(RecordingDeviceType::System)),
+    }
+}
+
+fn signal_to_status(signal: Option<SignalStats>) -> Option<AudioSignalStatus> {
+    signal.map(|stats| AudioSignalStatus {
+        rms_level: stats.rms_level,
+        peak_level: stats.peak_level,
+        is_active: stats.is_active,
+        updated_ago_ms: stats.updated_at.elapsed().as_millis() as u64,
+    })
 }
 
 /// Pause the current recording

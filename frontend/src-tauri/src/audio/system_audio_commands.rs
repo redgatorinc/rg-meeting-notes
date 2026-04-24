@@ -1,13 +1,28 @@
-use tauri::{command, AppHandle, Emitter, State};
 use crate::audio::{
-    start_system_audio_capture, list_system_audio_devices, check_system_audio_permissions,
-    SystemAudioDetector, SystemAudioEvent, new_system_audio_callback
+    check_system_audio_permissions, default_input_device, default_output_device,
+    list_system_audio_devices, new_system_audio_callback, start_system_audio_capture,
+    system_detector::current_system_audio_using_apps, SystemAudioDetector, SystemAudioEvent,
 };
-use std::sync::{Arc, Mutex};
 use anyhow::Result;
+use serde::Serialize;
+use std::sync::{Arc, Mutex};
+use tauri::{command, AppHandle, Emitter, State};
 
 // Global state for system audio detector
 type SystemAudioDetectorState = Arc<Mutex<Option<SystemAudioDetector>>>;
+
+#[derive(Debug, Serialize, Clone)]
+pub struct AudioEndpointStatus {
+    pub available: bool,
+    pub device_name: Option<String>,
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct AudioDetectionSnapshot {
+    pub input: AudioEndpointStatus,
+    pub output: AudioEndpointStatus,
+    pub output_apps: Vec<String>,
+}
 
 /// Start system audio capture (for capturing system output audio)
 #[command]
@@ -32,6 +47,43 @@ pub async fn list_system_audio_devices_command() -> Result<Vec<String>, String> 
 #[command]
 pub async fn check_system_audio_permissions_command() -> bool {
     check_system_audio_permissions()
+}
+
+/// List apps currently producing system output audio.
+#[command]
+pub async fn get_system_audio_using_apps() -> Result<Vec<String>, String> {
+    Ok(current_system_audio_using_apps())
+}
+
+/// Return explicit input/output endpoint status for the Home recording card.
+#[command]
+pub async fn get_audio_detection_snapshot() -> Result<AudioDetectionSnapshot, String> {
+    let input = match default_input_device() {
+        Ok(device) => AudioEndpointStatus {
+            available: true,
+            device_name: Some(device.name),
+        },
+        Err(_) => AudioEndpointStatus {
+            available: false,
+            device_name: None,
+        },
+    };
+    let output = match default_output_device() {
+        Ok(device) => AudioEndpointStatus {
+            available: true,
+            device_name: Some(device.name),
+        },
+        Err(_) => AudioEndpointStatus {
+            available: false,
+            device_name: None,
+        },
+    };
+
+    Ok(AudioDetectionSnapshot {
+        input,
+        output,
+        output_apps: current_system_audio_using_apps(),
+    })
 }
 
 /// Start monitoring system audio usage by other applications

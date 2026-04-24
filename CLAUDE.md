@@ -262,6 +262,28 @@ macro_rules! perf_debug {
 
 **Pattern**: Tauri commands update Rust state → Emit events → Frontend listeners update React state → Context propagates to components
 
+### 5. Settings UI Consistency
+
+When adding or changing Settings screens, reuse the shared settings layout components from `frontend/src/components/settings/SettingsPanel.tsx` instead of hand-writing card classes:
+- `SettingsPanel` for primary white rounded cards (`bg-white`, border, padding, shadow)
+- `SettingsTogglePanel` for title/description rows with a switch or other right-side control
+- `SettingsField` for form controls such as selects and inputs, so labels, spacing, and control rows stay consistent
+- `SettingsInset` for nested neutral panels
+- `SettingsNotice` for info/warning/danger callouts
+
+Use the shared Settings heading components instead of raw `h1`/`h2`/`h3` class strings:
+- `SettingsPageTitle` for the Settings page title
+- `SettingsTabHeader` for top-of-tab titles and descriptions
+- `SettingsPanelTitle` / `SettingsPanelHeader` for card titles
+- `SettingsSubsectionTitle` for nested panel labels
+
+For compact status badges, keep the shared rounded-pill style consistent:
+- Base: `inline-flex max-w-full rounded-full px-2 py-0.5 text-[11px] font-medium`
+- Ready/success: `bg-green-50 text-green-700`
+- Neutral/not detected: `bg-gray-100 text-gray-600`
+- Warning/unsupported: `bg-amber-50 text-amber-700`
+- Error: `bg-red-50 text-red-700`
+
 ## Common Development Tasks
 
 ### Adding a New Audio Device Platform

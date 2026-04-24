@@ -378,6 +378,16 @@ fn list_system_audio_using_apps() -> Vec<String> {
     }
 }
 
+#[cfg(target_os = "macos")]
+pub fn current_system_audio_using_apps() -> Vec<String> {
+    list_system_audio_using_apps()
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn current_system_audio_using_apps() -> Vec<String> {
+    Vec::new()
+}
+
 // Stub implementation for non-macOS platforms
 #[cfg(not(target_os = "macos"))]
 pub struct MacOSSystemAudioDetector;
