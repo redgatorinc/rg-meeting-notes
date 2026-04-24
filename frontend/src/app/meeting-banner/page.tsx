@@ -38,8 +38,8 @@ function BannerContent() {
         {/* App icon */}
         <div className="flex-shrink-0 w-9 h-9 rounded-full bg-white/10 flex items-center justify-center">
           <img
-            src="/logo.png"
-            alt="Meetily"
+            src="/redgator-icon.png"
+            alt="Redgator"
             className="w-6 h-6 rounded-sm"
             draggable={false}
           />
