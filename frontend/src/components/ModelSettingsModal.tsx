@@ -101,6 +101,22 @@ const GROQ_FALLBACK_MODELS = [
   'gemma2-9b-it',
 ];
 
+// Fallback models for Custom OpenAI-compatible servers when /models cannot be fetched
+// or returns nothing. Covers the most common hosted + self-hosted names.
+const CUSTOM_OPENAI_FALLBACK_MODELS = [
+  'gpt-4o',
+  'gpt-4o-mini',
+  'gpt-4-turbo',
+  'gpt-4',
+  'gpt-3.5-turbo',
+  'llama-3.3-70b',
+  'llama-3.1-70b',
+  'llama-3.1-8b',
+  'mixtral-8x7b',
+  'qwen2.5-72b',
+  'deepseek-chat',
+];
+
 interface ModelSettingsModalProps {
   modelConfig: ModelConfig;
   setModelConfig: (config: ModelConfig | ((prev: ModelConfig) => ModelConfig)) => void;
@@ -153,10 +169,14 @@ export function ModelSettingsModal({
   const [isCustomOpenAIAdvancedOpen, setIsCustomOpenAIAdvancedOpen] = useState<boolean>(false);
   const [isTestingConnection, setIsTestingConnection] = useState<boolean>(false);
 
-  // Custom OpenAI: fetched models list + input mode toggle (select fetched vs free-text)
+  // Custom OpenAI: fetched model IDs + searchable combobox state. The combobox
+  // merges CUSTOM_OPENAI_FALLBACK_MODELS with fetched IDs, and also allows the
+  // user to pick a typed value that is not in either list (covers custom
+  // servers that don't expose /models and use bespoke model names).
   const [customOpenAIModels, setCustomOpenAIModels] = useState<string[]>([]);
   const [isFetchingCustomModels, setIsFetchingCustomModels] = useState<boolean>(false);
-  const [customModelInputMode, setCustomModelInputMode] = useState<'select' | 'input'>('input');
+  const [customModelComboboxOpen, setCustomModelComboboxOpen] = useState<boolean>(false);
+  const [customModelSearch, setCustomModelSearch] = useState<string>('');
 
   // Combobox state
   const [modelComboboxOpen, setModelComboboxOpen] = useState<boolean>(false);
@@ -1013,75 +1033,117 @@ export function ModelSettingsModal({
             <div>
               <div className="flex items-center justify-between gap-2">
                 <Label htmlFor="custom-model">Model Name *</Label>
-                <div className="flex items-center gap-3">
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      if (!customOpenAIEndpoint.trim()) {
-                        toast.error('Enter Endpoint URL first');
-                        return;
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!customOpenAIEndpoint.trim()) {
+                      toast.error('Enter Endpoint URL first');
+                      return;
+                    }
+                    setIsFetchingCustomModels(true);
+                    try {
+                      const ids = await invoke<string[]>('api_fetch_custom_openai_models', {
+                        endpoint: customOpenAIEndpoint.trim(),
+                        apiKey: customOpenAIApiKey.trim() || null,
+                      });
+                      setCustomOpenAIModels(ids);
+                      if (ids.length && !ids.includes(customOpenAIModel)) {
+                        setCustomOpenAIModel(ids[0]);
                       }
-                      setIsFetchingCustomModels(true);
-                      try {
-                        const ids = await invoke<string[]>('api_fetch_custom_openai_models', {
-                          endpoint: customOpenAIEndpoint.trim(),
-                          apiKey: customOpenAIApiKey.trim() || null,
-                        });
-                        setCustomOpenAIModels(ids);
-                        setCustomModelInputMode('select');
-                        if (ids.length && !ids.includes(customOpenAIModel)) {
-                          setCustomOpenAIModel(ids[0]);
-                        }
-                        toast.success(`Loaded ${ids.length} model(s)`);
-                      } catch (err: any) {
-                        toast.error(typeof err === 'string' ? err : err?.message || 'Failed to fetch models');
-                      } finally {
-                        setIsFetchingCustomModels(false);
-                      }
-                    }}
-                    disabled={isFetchingCustomModels || !customOpenAIEndpoint.trim()}
-                    className="text-xs text-primary hover:underline disabled:opacity-50 disabled:no-underline inline-flex items-center gap-1"
-                    title="GET {endpoint}/models"
-                  >
-                    <RefreshCw className={cn('h-3 w-3', isFetchingCustomModels && 'animate-spin')} />
-                    {isFetchingCustomModels ? 'Fetching...' : 'Fetch models'}
-                  </button>
-                  {customOpenAIModels.length > 0 && (
-                    <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                      <span>Input</span>
-                      <Switch
-                        checked={customModelInputMode === 'select'}
-                        onCheckedChange={(v) => setCustomModelInputMode(v ? 'select' : 'input')}
-                      />
-                      <span>Select</span>
-                    </div>
-                  )}
-                </div>
+                      toast.success(`Loaded ${ids.length} model(s)`);
+                    } catch (err: any) {
+                      toast.error(typeof err === 'string' ? err : err?.message || 'Failed to fetch models');
+                    } finally {
+                      setIsFetchingCustomModels(false);
+                    }
+                  }}
+                  disabled={isFetchingCustomModels || !customOpenAIEndpoint.trim()}
+                  className="text-xs text-primary hover:underline disabled:opacity-50 disabled:no-underline inline-flex items-center gap-1"
+                  title="GET {endpoint}/models"
+                >
+                  <RefreshCw className={cn('h-3 w-3', isFetchingCustomModels && 'animate-spin')} />
+                  {isFetchingCustomModels ? 'Fetching...' : 'Fetch models'}
+                </button>
               </div>
-              {customModelInputMode === 'select' && customOpenAIModels.length > 0 ? (
-                <Select value={customOpenAIModel} onValueChange={setCustomOpenAIModel}>
-                  <SelectTrigger id="custom-model" className="mt-1">
-                    <SelectValue placeholder="Select a model" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {customOpenAIModels.map((id) => (
-                      <SelectItem key={id} value={id}>
-                        {id}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              ) : (
-                <Input
-                  id="custom-model"
-                  value={customOpenAIModel}
-                  onChange={(e) => setCustomOpenAIModel(e.target.value)}
-                  placeholder="gpt-4, llama-3-70b, etc."
-                  className="mt-1"
-                />
-              )}
+              <Popover open={customModelComboboxOpen} onOpenChange={setCustomModelComboboxOpen} modal={true}>
+                <PopoverTrigger asChild>
+                  <Button
+                    id="custom-model"
+                    variant="outline"
+                    role="combobox"
+                    aria-expanded={customModelComboboxOpen}
+                    className="w-full mt-1 justify-between font-normal"
+                  >
+                    <span className="truncate">
+                      {customOpenAIModel || 'Select or type a model...'}
+                    </span>
+                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                  <Command shouldFilter={true}>
+                    <CommandInput
+                      placeholder="Search or type a model id..."
+                      value={customModelSearch}
+                      onValueChange={setCustomModelSearch}
+                    />
+                    <CommandList className="max-h-[300px]">
+                      <CommandEmpty>
+                        {customModelSearch.trim() ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setCustomOpenAIModel(customModelSearch.trim());
+                              setCustomModelComboboxOpen(false);
+                            }}
+                            className="w-full text-left px-2 py-1.5 text-sm hover:bg-accent rounded"
+                          >
+                            Use <span className="font-mono">"{customModelSearch.trim()}"</span>
+                          </button>
+                        ) : (
+                          <span className="block px-2 py-1.5 text-sm text-muted-foreground">No models. Fetch or type one.</span>
+                        )}
+                      </CommandEmpty>
+                      {customOpenAIModels.length > 0 && (
+                        <CommandGroup heading="From endpoint">
+                          {customOpenAIModels.map((id) => (
+                            <CommandItem
+                              key={`fetched-${id}`}
+                              value={id}
+                              onSelect={(v) => {
+                                setCustomOpenAIModel(v);
+                                setCustomModelComboboxOpen(false);
+                              }}
+                            >
+                              <Check className={cn('mr-2 h-4 w-4', customOpenAIModel === id ? 'opacity-100' : 'opacity-0')} />
+                              <span className="truncate">{id}</span>
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      )}
+                      <CommandGroup heading="Common models">
+                        {CUSTOM_OPENAI_FALLBACK_MODELS
+                          .filter((id) => !customOpenAIModels.includes(id))
+                          .map((id) => (
+                            <CommandItem
+                              key={`fallback-${id}`}
+                              value={id}
+                              onSelect={(v) => {
+                                setCustomOpenAIModel(v);
+                                setCustomModelComboboxOpen(false);
+                              }}
+                            >
+                              <Check className={cn('mr-2 h-4 w-4', customOpenAIModel === id ? 'opacity-100' : 'opacity-0')} />
+                              <span className="truncate">{id}</span>
+                            </CommandItem>
+                          ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
               <p className="text-xs text-muted-foreground mt-1">
-                Model identifier to use for requests
+                Pick from the list, fetch from the endpoint, or type any model id.
               </p>
             </div>
 
