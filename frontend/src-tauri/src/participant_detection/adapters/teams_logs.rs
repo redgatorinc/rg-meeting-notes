@@ -86,8 +86,34 @@ fn candidate_log_dirs() -> Vec<PathBuf> {
     dirs
 }
 
-fn newest_log_file(dirs: &[PathBuf]) -> Option<PathBuf> {
-    let mut best: Option<(PathBuf, SystemTime)> = None;
+/// Teams fans logs across many files. These prefixes carry background
+/// telemetry or infra events that never contain participant names —
+/// skip them.
+const SKIP_SUBSTRINGS: &[&str] = &[
+    "BackgroundEcs",
+    "BackgroundCallingFlights",
+    "IPC",
+    "ContextData",
+    "HubSidebarApp",
+    "NativeModules",
+    "Slimcore",
+    "Fluid",
+];
+
+/// Files likely to contain the participant/active-speaker events we
+/// want, in priority order. When we pick candidates we prefer these.
+const PREFER_SUBSTRINGS: &[&str] = &[
+    "CallingService",
+    "CallingScreen",
+    "MeetingStage",
+    "Calling",
+    "Meeting",
+];
+
+/// Return up to `max_files` most recent candidate log files, preferring
+/// the ones whose names match PREFER_SUBSTRINGS.
+fn candidate_log_files(dirs: &[PathBuf], max_files: usize) -> Vec<PathBuf> {
+    let mut candidates: Vec<(PathBuf, SystemTime, bool)> = Vec::new();
     for dir in dirs {
         let Ok(entries) = fs::read_dir(dir) else {
             continue;
@@ -101,20 +127,29 @@ fn newest_log_file(dirs: &[PathBuf]) -> Option<PathBuf> {
             if !(name.ends_with(".log") || name.ends_with(".txt")) {
                 continue;
             }
+            if SKIP_SUBSTRINGS.iter().any(|s| name.contains(s)) {
+                continue;
+            }
             let modified = entry
                 .metadata()
                 .ok()
                 .and_then(|m| m.modified().ok())
                 .unwrap_or(SystemTime::UNIX_EPOCH);
-            if best
-                .as_ref()
-                .map_or(true, |(_, ts)| modified > *ts)
-            {
-                best = Some((path, modified));
-            }
+            let preferred = PREFER_SUBSTRINGS.iter().any(|s| name.contains(s));
+            candidates.push((path, modified, preferred));
         }
     }
-    best.map(|(p, _)| p)
+    // Sort: preferred first, then newest first.
+    candidates.sort_by(|a, b| match (a.2, b.2) {
+        (true, false) => std::cmp::Ordering::Less,
+        (false, true) => std::cmp::Ordering::Greater,
+        _ => b.1.cmp(&a.1),
+    });
+    candidates
+        .into_iter()
+        .take(max_files)
+        .map(|(p, _, _)| p)
+        .collect()
 }
 
 /// Read at most `max_bytes` from the end of the file.
@@ -225,22 +260,41 @@ impl IntegratedAdapter for TeamsLogsAdapter {
         if dirs.is_empty() {
             return Err(anyhow!("No Teams log directory found."));
         }
-        let newest = newest_log_file(&dirs)
-            .ok_or_else(|| anyhow!("No .log file in Teams log directories."))?;
 
-        let text = tail(&newest, 512 * 1024)
-            .with_context(|| format!("Tailing {}", newest.display()))?;
+        // Look at a handful of the most relevant recent logs rather
+        // than only the single newest file, because Teams partitions
+        // meeting events across multiple rotating files.
+        let files = candidate_log_files(&dirs, 6);
+        if files.is_empty() {
+            return Err(anyhow!("No candidate Teams log files."));
+        }
 
-        let names = extract_participants(&text);
-        if names.is_empty() {
+        let mut all_names: HashSet<String> = HashSet::new();
+        let mut current: Option<String> = None;
+        let mut scanned_names = Vec::new();
+        for path in &files {
+            let Ok(text) = tail(path, 512 * 1024) else {
+                continue;
+            };
+            let names = extract_participants(&text);
+            all_names.extend(names);
+            if current.is_none() {
+                current = extract_current_speaker(&text);
+            }
+            if let Some(n) = path.file_name().and_then(|s| s.to_str()) {
+                scanned_names.push(n.to_string());
+            }
+        }
+
+        if all_names.is_empty() {
             return Err(anyhow!(
-                "teams/log_tail: no participant names found in the last 512 KB of {}. The log format may have changed. Switch to 'Integrated + AI fallback' for a screenshot-based result.",
-                newest.file_name().and_then(|s| s.to_str()).unwrap_or("(latest log)")
+                "teams/log_tail: no participant names found across {} recent log files ({}). The log format may have changed. Switch to 'Integrated + AI fallback' for a screenshot-based result.",
+                scanned_names.len(),
+                scanned_names.join(", ")
             ));
         }
 
-        let current = extract_current_speaker(&text);
-        let mut participants: Vec<String> = names.into_iter().collect();
+        let mut participants: Vec<String> = all_names.into_iter().collect();
         participants.sort();
 
         Ok(AdapterSnapshot {
