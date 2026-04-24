@@ -40,47 +40,66 @@ impl Engine {
     pub fn diarize(
         transcripts: &[Transcript],
         pack: ModelPack,
-        max_clusters: usize,
+        _max_clusters: usize,
     ) -> (Vec<Cluster>, Vec<Assignment>) {
-        let n = max_clusters.max(1);
         let _ = pack; // reserved for future pack-specific tuning
 
-        let mut totals: Vec<i64> = vec![0; n];
+        // Phase-1 stub strategy: if the live pipeline already tagged
+        // transcripts with `live-mic` or `live-system`, trust that —
+        // one cluster for "You" (mic) and one for "Remote" (system).
+        // That's an honest 1- or 2-speaker split, not the 3-way fake
+        // hash we had before. If no live tags are present (e.g. the
+        // recording was imported from a file) fall back to a single
+        // cluster. Real multi-speaker splitting lands with sherpa-onnx.
+        const MIC_IDX: i64 = 0;
+        const SYSTEM_IDX: i64 = 1;
+
+        let mut mic_ms: i64 = 0;
+        let mut system_ms: i64 = 0;
+        let mut uncategorized_ms: i64 = 0;
         let mut assignments = Vec::with_capacity(transcripts.len());
 
-        for (idx, t) in transcripts.iter().enumerate() {
-            let bucket = cluster_for(&t.transcript, idx, n) as i64;
+        for t in transcripts {
             let duration_ms = t
                 .duration
                 .map(|d| (d * 1000.0).round().max(0.0) as i64)
                 .unwrap_or(0);
-            totals[bucket as usize] += duration_ms;
+            let bucket = match t.speaker_id.as_deref() {
+                Some("live-mic") => {
+                    mic_ms += duration_ms;
+                    MIC_IDX
+                }
+                Some("live-system") => {
+                    system_ms += duration_ms;
+                    SYSTEM_IDX
+                }
+                _ => {
+                    uncategorized_ms += duration_ms;
+                    MIC_IDX // lump unknowns into "You" so we don't invent a phantom speaker
+                }
+            };
             assignments.push(Assignment {
                 transcript_id: t.id.clone(),
                 cluster_idx: bucket,
             });
         }
 
-        let clusters: Vec<Cluster> = totals
-            .into_iter()
-            .enumerate()
-            .filter(|(_, ms)| *ms > 0) // drop empty clusters so UI doesn't show phantoms
-            .map(|(idx, total_speaking_ms)| Cluster {
-                cluster_idx: idx as i64,
-                total_speaking_ms,
+        let mut clusters = Vec::new();
+        if mic_ms + uncategorized_ms > 0 {
+            clusters.push(Cluster {
+                cluster_idx: MIC_IDX,
+                total_speaking_ms: mic_ms + uncategorized_ms,
                 centroid_embedding: None,
-            })
-            .collect();
+            });
+        }
+        if system_ms > 0 {
+            clusters.push(Cluster {
+                cluster_idx: SYSTEM_IDX,
+                total_speaking_ms: system_ms,
+                centroid_embedding: None,
+            });
+        }
 
         (clusters, assignments)
     }
-}
-
-fn cluster_for(text: &str, row_idx: usize, n: usize) -> usize {
-    let ch_hash = text
-        .chars()
-        .next()
-        .map(|c| c as usize)
-        .unwrap_or(row_idx);
-    ch_hash % n
 }

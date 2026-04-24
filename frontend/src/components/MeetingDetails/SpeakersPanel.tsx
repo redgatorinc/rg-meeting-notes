@@ -198,6 +198,43 @@ export function SpeakersPanel({ meetingId, onSpeakersChanged }: SpeakersPanelPro
             <RefreshCw className={`h-3 w-3 ${isBusy ? 'animate-spin' : ''}`} />
             {speakers.length === 0 ? 'Diarize' : 'Re-run'}
           </button>
+          <button
+            type="button"
+            onClick={async () => {
+              const toastId = toast.loading('Detecting participants…');
+              try {
+                const result = await invoke<{
+                  participants: { name: string }[];
+                  current_speaker?: string | null;
+                  provider_host: string;
+                  source_app: string;
+                }>('participant_detect_snapshot', { meetingId });
+                const names = result.participants.map((p) => p.name).join(', ');
+                const via = result.provider_host
+                  ? ` · via ${result.provider_host}`
+                  : '';
+                const spoken = result.current_speaker
+                  ? ` · ${result.current_speaker} speaking`
+                  : '';
+                toast.success(
+                  `Identified ${result.participants.length} participant${result.participants.length === 1 ? '' : 's'}${spoken}${via}${
+                    names ? ` — ${names}` : ''
+                  }`,
+                  { id: toastId, duration: 5000 },
+                );
+                await refetchSpeakers();
+                onSpeakersChanged?.();
+              } catch (err) {
+                toast.error(typeof err === 'string' ? err : 'Detection failed', {
+                  id: toastId,
+                });
+              }
+            }}
+            className="text-xs text-primary hover:underline disabled:opacity-50 inline-flex items-center gap-1"
+            title="Identify participants using the configured mode (Integrated / AI)"
+          >
+            📸 Detect
+          </button>
         </div>
       </div>
 
