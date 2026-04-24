@@ -23,6 +23,10 @@ struct AnthropicApiModel {
 #[derive(Debug, Deserialize)]
 struct AnthropicApiResponse {
     data: Vec<AnthropicApiModel>,
+    #[serde(default)]
+    has_more: bool,
+    #[serde(default)]
+    last_id: Option<String>,
 }
 
 /// Cache entry for models
@@ -95,52 +99,70 @@ pub async fn get_anthropic_models(api_key: Option<String>) -> Result<Vec<Anthrop
         }
     }
 
-    // Fetch from API
-    log::info!("Fetching Anthropic models from API...");
+    // Fetch from API (paginated — Anthropic returns up to 1000 per page via ?limit=1000
+    // and signals more pages via has_more + last_id).
+    log::info!("Fetching Anthropic models from API (paginated)...");
     let client = reqwest::Client::new();
+    let mut all_models: Vec<AnthropicModel> = Vec::new();
+    let mut after_id: Option<String> = None;
 
-    let response = match client
-        .get("https://api.anthropic.com/v1/models")
-        .header("x-api-key", &api_key)
-        .header("anthropic-version", "2023-06-01")
-        .timeout(Duration::from_secs(5))
-        .send()
-        .await
-    {
-        Ok(resp) => resp,
-        Err(e) => {
-            log::warn!("Failed to fetch Anthropic models: {}. Using fallback.", e);
+    loop {
+        let mut url = String::from("https://api.anthropic.com/v1/models?limit=1000");
+        if let Some(ref id) = after_id {
+            url.push_str(&format!("&after_id={}", id));
+        }
+
+        let response = match client
+            .get(&url)
+            .header("x-api-key", &api_key)
+            .header("anthropic-version", "2023-06-01")
+            .timeout(Duration::from_secs(10))
+            .send()
+            .await
+        {
+            Ok(resp) => resp,
+            Err(e) => {
+                log::warn!("Failed to fetch Anthropic models: {}. Using fallback.", e);
+                return Ok(get_fallback_models());
+            }
+        };
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            log::warn!(
+                "Anthropic API returned status {}: {}. Using fallback models.",
+                status,
+                body
+            );
             return Ok(get_fallback_models());
         }
-    };
 
-    if !response.status().is_success() {
-        let status = response.status();
-        log::warn!(
-            "Anthropic API returned status {}. Using fallback models.",
-            status
-        );
-        return Ok(get_fallback_models());
+        let api_response: AnthropicApiResponse = match response.json().await {
+            Ok(data) => data,
+            Err(e) => {
+                log::warn!("Failed to parse Anthropic response: {}. Using fallback.", e);
+                return Ok(get_fallback_models());
+            }
+        };
+
+        let has_more = api_response.has_more;
+        let next_after = api_response.last_id.clone();
+
+        for m in api_response.data.into_iter().filter(|m| is_chat_model(&m.id)) {
+            all_models.push(AnthropicModel {
+                id: m.id,
+                display_name: m.display_name,
+            });
+        }
+
+        if !has_more || next_after.is_none() {
+            break;
+        }
+        after_id = next_after;
     }
 
-    let api_response: AnthropicApiResponse = match response.json().await {
-        Ok(data) => data,
-        Err(e) => {
-            log::warn!("Failed to parse Anthropic response: {}. Using fallback.", e);
-            return Ok(get_fallback_models());
-        }
-    };
-
-    // Filter to only chat models and map to our struct
-    let models: Vec<AnthropicModel> = api_response
-        .data
-        .into_iter()
-        .filter(|m| is_chat_model(&m.id))
-        .map(|m| AnthropicModel {
-            id: m.id,
-            display_name: m.display_name,
-        })
-        .collect();
+    let models = all_models;
 
     // If no models returned, use fallback
     if models.is_empty() {
