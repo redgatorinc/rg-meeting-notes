@@ -203,10 +203,17 @@ async fn run_name_pipeline<R: Runtime>(
     let cue_candidates =
         super::cue_parser::extract_candidates(transcripts, &sid_to_cluster);
 
-    // LLM pass — stub today (returns empty), real provider wiring in a
-    // follow-up PR.
-    let llm_candidates =
-        super::llm_namer::extract_candidates(speakers, &sid_to_cluster, transcripts).await;
+    // LLM pass — dispatches through the summary pipeline's provider
+    // surface, so it inherits every provider the user has already
+    // configured (OpenAI / Claude / Groq / Ollama / BuiltInAI / …).
+    let llm_candidates = super::llm_namer::extract_candidates(
+        app,
+        pool,
+        speakers,
+        &sid_to_cluster,
+        transcripts,
+    )
+    .await;
 
     // Adapter pass — reads `meeting_participants` captured at recording start.
     let adapter_candidates =
