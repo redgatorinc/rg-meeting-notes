@@ -37,7 +37,9 @@ export function TranscriptPanel({
   const { checkPermissions, isChecking, hasSystemAudio, hasMicrophone } = usePermissionCheck();
   const isLinux = useIsLinux();
 
-  // Convert transcripts to segments for virtualized view
+  // Convert transcripts to segments for virtualized view — preserve the
+  // live speaker_id ("live-mic" / "live-system") so VirtualizedTranscriptView
+  // can render the inline `You:` / `Remote:` prefix during recording.
   const segments = useMemo(() =>
     transcripts.map(t => ({
       id: t.id,
@@ -45,6 +47,7 @@ export function TranscriptPanel({
       endTime: t.audio_end_time,
       text: t.text,
       confidence: t.confidence,
+      speakerId: t.speaker_id ?? null,
     })),
     [transcripts]
   );

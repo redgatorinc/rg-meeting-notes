@@ -546,6 +546,18 @@ export function TranscriptProvider({ children }: { children: ReactNode }) {
       is_partial: update.is_partial
     });
 
+    // Cheap live diarization: backend tags each `transcript-update` with the
+    // audio source ("mic" / "system"). Map that to one of two virtual speaker
+    // ids so the inline `Speaker N:` / `You:` / `Remote:` prefix renders in
+    // real time. Post-hoc diarization (run after recording stops) replaces
+    // these with real voice-embedding clusters.
+    const liveSpeakerId =
+      update.source === 'mic'
+        ? 'live-mic'
+        : update.source === 'system'
+          ? 'live-system'
+          : null;
+
     const newTranscript: Transcript = {
       id: update.sequence_id ? update.sequence_id.toString() : Date.now().toString(),
       text: update.text,
@@ -557,6 +569,7 @@ export function TranscriptProvider({ children }: { children: ReactNode }) {
       audio_start_time: update.audio_start_time,
       audio_end_time: update.audio_end_time,
       duration: update.duration,
+      speaker_id: liveSpeakerId,
     };
 
     setTranscripts(prev => {
