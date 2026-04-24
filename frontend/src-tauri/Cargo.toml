@@ -131,7 +131,7 @@ qwen3-asr-sys = { path = "qwen3-asr-sys", optional = true }
 # Real speaker-diarization backend (sherpa-onnx bindings). Optional —
 # enabled by the `diarization-onnx` feature. Default build uses the
 # stub engine in `diarization::engine` and doesn't pull this in.
-sherpa-rs = { version = "0.6", optional = true, default-features = false }
+sherpa-rs = { version = "0.7", optional = true, default-features = false }
 
 # Async
 tokio = { version = "1.32.0", features = ["full", "tracing"] }
