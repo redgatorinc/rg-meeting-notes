@@ -84,6 +84,7 @@ const TranscriptSegment = memo(function TranscriptSegment({
     isStreaming,
     showConfidence,
     speaker,
+    segmentSpeakerId,
 }: {
     id: string;
     timestamp: number;
@@ -92,13 +93,27 @@ const TranscriptSegment = memo(function TranscriptSegment({
     isStreaming: boolean;
     showConfidence: boolean;
     speaker?: Speaker;
+    segmentSpeakerId?: string | null;
 }) {
     const displayText = cleanStopWords(text) || (text.trim() === '' ? '[Silence]' : text);
 
-    const speakerLabel = speaker
-        ? (speaker.display_name?.trim() || `Speaker ${speaker.cluster_idx + 1}`)
-        : null;
-    const speakerColor = speaker ? colorForCluster(speaker.cluster_idx) : undefined;
+    // Virtual ids set by live transcription (before post-hoc diarization runs):
+    //   - "live-mic"    → "You"    (golden hue 0)
+    //   - "live-system" → "Remote" (golden hue 1)
+    // After diarization, transcripts carry a real speakers(id) UUID and the
+    // `speaker` prop is the DB row (may have a user-assigned display_name).
+    let speakerLabel: string | null = null;
+    let speakerColor: string | undefined;
+    if (speaker) {
+        speakerLabel = speaker.display_name?.trim() || `Speaker ${speaker.cluster_idx + 1}`;
+        speakerColor = colorForCluster(speaker.cluster_idx);
+    } else if (segmentSpeakerId === 'live-mic') {
+        speakerLabel = 'You';
+        speakerColor = colorForCluster(0);
+    } else if (segmentSpeakerId === 'live-system') {
+        speakerLabel = 'Remote';
+        speakerColor = colorForCluster(1);
+    }
 
     return (
         <div id={`segment-${id}`} className="mb-3">
@@ -341,6 +356,7 @@ export const VirtualizedTranscriptView: React.FC<VirtualizedTranscriptViewProps>
                                                 ? speakersById.get(segment.speakerId)
                                                 : undefined
                                         }
+                                        segmentSpeakerId={segment.speakerId}
                                     />
                                 </div>
                             );
@@ -402,6 +418,7 @@ export const VirtualizedTranscriptView: React.FC<VirtualizedTranscriptViewProps>
                                                 ? speakersById.get(segment.speakerId)
                                                 : undefined
                                         }
+                                        segmentSpeakerId={segment.speakerId}
                                     />
                                 </motion.div>
                             );
