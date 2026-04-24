@@ -91,6 +91,11 @@ pub struct AdapterStatusReport {
 }
 
 #[tauri::command]
+pub async fn participant_session_info() -> Result<Option<super::session::ActiveSession>, String> {
+    Ok(super::session::current())
+}
+
+#[tauri::command]
 pub async fn participant_adapter_statuses() -> Result<Vec<AdapterStatusReport>, String> {
     let adapters = build_adapters();
     Ok(adapters
@@ -158,10 +163,27 @@ async fn run_integrated(
         return Err("Integrated detection is disabled in settings.".to_string());
     }
 
+    // Honor a locked adapter if the session has one. If the locked
+    // choice is the "ai" pseudo-adapter, skip integrated entirely —
+    // the caller will fall back to AI.
+    let locked_id = super::session::current()
+        .and_then(|s| s.locked_adapter.map(|a| a.app_id));
+
     let adapters = build_adapters();
     let mut last_err: Option<String> = None;
+    let mut tried_any = false;
 
     for adapter in adapters.iter() {
+        // If session locked a specific adapter, only try that one.
+        if let Some(ref id) = locked_id {
+            if id == "ai" {
+                return Err("session locked to AI path".to_string());
+            }
+            if adapter.id() != id {
+                continue;
+            }
+        }
+
         let enabled = match adapter.id() {
             "teams" => cfg.integrated.teams.enabled,
             "zoom" => cfg.integrated.zoom.enabled,
@@ -171,6 +193,13 @@ async fn run_integrated(
         if !enabled {
             continue;
         }
+        // Only call snapshot() on adapters that report Ready — avoids
+        // the Zoom "parser not yet implemented" error bubbling up when
+        // the user is actually in Teams.
+        if !matches!(adapter.status(), super::adapters::AdapterStatus::Ready) {
+            continue;
+        }
+        tried_any = true;
         match adapter.snapshot() {
             Ok(snapshot) => {
                 let result = DetectionResult {
@@ -193,7 +222,13 @@ async fn run_integrated(
         }
     }
 
-    Err(last_err.unwrap_or_else(|| "No integrated adapters are enabled.".to_string()))
+    if !tried_any {
+        return Err(
+            "No supported meeting app detected. Start your call in Teams or Zoom first."
+                .to_string(),
+        );
+    }
+    Err(last_err.unwrap_or_else(|| "All integrated adapters failed.".to_string()))
 }
 
 async fn run_ai<R: Runtime>(

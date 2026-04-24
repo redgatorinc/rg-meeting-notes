@@ -682,6 +682,7 @@ pub fn run() {
             participant_detection::commands::participant_config_get,
             participant_detection::commands::participant_config_set,
             participant_detection::commands::participant_adapter_statuses,
+            participant_detection::commands::participant_session_info,
             // Summary commands
             summary::api_process_transcript,
             summary::api_get_summary,

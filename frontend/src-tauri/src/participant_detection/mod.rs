@@ -14,6 +14,7 @@
 pub mod adapters;
 pub mod commands;
 pub mod config;
+pub mod session;
 pub mod vision_client;
 pub mod window_capture;
 
