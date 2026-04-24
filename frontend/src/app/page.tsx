@@ -19,6 +19,8 @@ import { useRecordingStop } from '@/hooks/useRecordingStop';
 import { useTranscriptRecovery } from '@/hooks/useTranscriptRecovery';
 
 import { TranscriptRecovery } from '@/components/TranscriptRecovery';
+import { LiveParticipantStatus } from '@/components/LiveParticipantStatus';
+import { RecordingMeetingAppStatus } from '@/components/RecordingMeetingAppStatus';
 import { indexedDBService } from '@/services/indexedDBService';
 import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
@@ -259,6 +261,15 @@ export default function Home() {
           isProcessing={status === RecordingStatus.PROCESSING_TRANSCRIPTS && !recordingState.isRecording}
           isSaving={status === RecordingStatus.SAVING}
           sidebarCollapsed={sidebarCollapsed}
+        />
+
+        {/* Meeting-app + detection-method status, locked at recording start */}
+        <RecordingMeetingAppStatus visible={recordingState.isRecording} />
+
+        {/* Live participant detection status — only while recording */}
+        <LiveParticipantStatus
+          visible={recordingState.isRecording}
+          autoIntervalMs={null}
         />
       </div>
     </motion.div>

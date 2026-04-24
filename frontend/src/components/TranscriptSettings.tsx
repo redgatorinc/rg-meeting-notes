@@ -8,6 +8,7 @@ import { Eye, EyeOff, Lock, Unlock } from 'lucide-react';
 import { ModelManager } from './WhisperModelManager';
 import { ParakeetModelManager } from './ParakeetModelManager';
 import { QwenAsrModelManager } from './QwenAsrModelManager';
+// ParticipantDetectionSettings moved to its own Settings tab.
 import { usePlatform } from '@/hooks/usePlatform';
 
 
@@ -334,6 +335,7 @@ export function TranscriptSettings({ transcriptModelConfig, setTranscriptModelCo
                             </div>
                         </div>
                     )}
+
                 </div>
             </div>
         </div >

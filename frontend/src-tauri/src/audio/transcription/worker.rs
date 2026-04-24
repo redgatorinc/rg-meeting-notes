@@ -171,6 +171,14 @@ pub fn start_transcription_task<R: Runtime>(
 
                             let chunk_timestamp = chunk.timestamp;
                             let chunk_duration = chunk.data.len() as f64 / chunk.sample_rate as f64;
+                            // Capture the audio source before the chunk is moved into the
+                            // transcribe call — used by the frontend as a cheap live-diarization
+                            // signal ("You" for the microphone, "Remote" for the system audio)
+                            // until real voice-embedding diarization lands in a follow-up PR.
+                            let chunk_source = match chunk.device_type {
+                                crate::audio::recording_state::DeviceType::Microphone => "mic",
+                                crate::audio::recording_state::DeviceType::System => "system",
+                            };
 
                             info!("📊 Chunk {} details: timestamp={:.2}s, duration={:.2}s, samples={}, sample_rate={}, time_range=[{:.2}s - {:.2}s]",
                                   chunk.chunk_id, chunk_timestamp, chunk_duration,
@@ -316,7 +324,7 @@ pub fn start_transcription_task<R: Runtime>(
                                         let update = TranscriptUpdate {
                                             text: deduped_transcript,
                                             timestamp: format_current_timestamp(), // Wall-clock for reference
-                                            source: "Audio".to_string(),
+                                            source: chunk_source.to_string(),
                                             sequence_id,
                                             chunk_start_time: chunk_timestamp, // Legacy compatibility
                                             is_partial,

@@ -35,6 +35,30 @@ pub struct Transcript {
     pub audio_start_time: Option<f64>,
     pub audio_end_time: Option<f64>,
     pub duration: Option<f64>,
+    // Diarization: FK to the speakers table when diarization has run.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub speaker_id: Option<String>,
+}
+
+/// One row per distinct voice cluster detected in a meeting (via diarization).
+///
+/// `cluster_idx` is the per-meeting index returned by the diarizer (0, 1, …).
+/// `display_name` is null until the user renames — the UI renders
+/// `Speaker {cluster_idx + 1}` in that case. `centroid_embedding` is an
+/// L2-normalized f32 vector encoded as raw little-endian bytes
+/// (`len * 4` bytes total); it is compared against future meetings via
+/// cosine similarity once Phase 3 cross-meeting voiceprints ship.
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct Speaker {
+    pub id: String,
+    pub meeting_id: String,
+    pub cluster_idx: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
+    pub total_speaking_ms: i64,
+    #[serde(skip)]
+    pub centroid_embedding: Option<Vec<u8>>,
+    pub embedding_model: String,
 }
 
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]

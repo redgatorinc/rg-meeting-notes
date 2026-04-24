@@ -13,10 +13,14 @@ use tauri::{AppHandle, Emitter, Manager, Runtime, WebviewUrl, WebviewWindowBuild
 /// - `meeting_indicators`: processes that only appear during an active meeting/call.
 ///   If empty, the app process itself is treated as the indicator (for apps
 ///   where the process only launches when joining a call).
-struct MeetingApp {
-    display_name: &'static str,
-    app_processes: &'static [&'static str],
-    meeting_indicators: &'static [&'static str],
+/// Static description of a supported meeting app. Visible to external
+/// modules (e.g. `participant_detection::window_capture`) which need the
+/// list of possible window-owning process names to filter the enumerated
+/// OS windows down to the meeting one.
+pub struct MeetingApp {
+    pub display_name: &'static str,
+    pub app_processes: &'static [&'static str],
+    pub meeting_indicators: &'static [&'static str],
 }
 
 const MEETING_APPS: &[MeetingApp] = &[
@@ -261,4 +265,19 @@ pub async fn get_meeting_detection_enabled<R: Runtime>(
         .try_state::<MeetingDetectionState>()
         .ok_or("MeetingDetectionState not initialized")?;
     Ok(state.is_enabled())
+}
+
+/// Return the first meeting app whose process list currently has a running
+/// match. Used by `participant_detection::window_capture` to scope the
+/// screenshot to the correct window-owning process. `None` if no known
+/// meeting app is running.
+pub fn active_meeting_app() -> Option<&'static MeetingApp> {
+    let mut system = System::new();
+    system.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+    for meeting_app in MEETING_APPS {
+        if has_process(&system, meeting_app.app_processes) {
+            return Some(meeting_app);
+        }
+    }
+    None
 }

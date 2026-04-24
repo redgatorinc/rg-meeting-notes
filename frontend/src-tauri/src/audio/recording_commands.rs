@@ -105,6 +105,11 @@ pub async fn start_recording_with_meeting_name<R: Runtime>(
     }
     info!("✅ Transcription model validation passed");
 
+    // Detect which meeting app the user is in and lock that adapter for
+    // the rest of this session. Emits `recording-app-detected` for the UI
+    // status card.
+    let _locked = crate::participant_detection::session::detect_and_lock(&app);
+
     // Async-first approach - no more blocking operations!
     info!("🚀 Starting async recording initialization");
 
@@ -845,6 +850,10 @@ pub async fn stop_recording<R: Runtime>(
     // Set recording flag to false
     info!("🔍 Setting IS_RECORDING to false");
     IS_RECORDING.store(false, Ordering::SeqCst);
+
+    // Clear the locked participant-detection adapter so the next recording
+    // re-detects instead of reusing a stale lock.
+    crate::participant_detection::session::clear();
 
     // Step 4.5: Prepare metadata for frontend (NO database save)
     // NOTE: We do NOT save to database here. The frontend will save after all transcripts are displayed.
