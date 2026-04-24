@@ -888,6 +888,51 @@ export function ModelSettingsModal({
             </Select>
 
             {modelConfig.provider !== 'builtin-ai' && modelConfig.provider !== 'custom-openai' && (
+              <div className="flex items-center gap-2">
+              {(modelConfig.provider === 'claude' ||
+                modelConfig.provider === 'openai' ||
+                modelConfig.provider === 'groq') && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!apiKey?.trim()) {
+                      toast.error('Enter API key first');
+                      return;
+                    }
+                    try {
+                      if (modelConfig.provider === 'claude') {
+                        await loadClaudeModels(apiKey);
+                        const n = (claudeModels.length) || 0;
+                        toast.success(n ? `Loaded Claude models` : 'Fetch returned 0 models — using fallback');
+                      } else if (modelConfig.provider === 'openai') {
+                        await loadOpenAIModels(apiKey);
+                        toast.success('Loaded OpenAI models');
+                      } else if (modelConfig.provider === 'groq') {
+                        await loadGroqModels(apiKey);
+                        toast.success('Loaded Groq models');
+                      }
+                    } catch (err: any) {
+                      toast.error(typeof err === 'string' ? err : err?.message || 'Fetch failed');
+                    }
+                  }}
+                  disabled={
+                    !apiKey?.trim() ||
+                    (modelConfig.provider === 'claude' && isLoadingClaude) ||
+                    (modelConfig.provider === 'openai' && isLoadingOpenAI) ||
+                    (modelConfig.provider === 'groq' && isLoadingGroq)
+                  }
+                  className="text-xs text-primary hover:underline disabled:opacity-50 disabled:no-underline inline-flex items-center gap-1 shrink-0"
+                  title="Fetch model list from provider API"
+                >
+                  <RefreshCw className={cn(
+                    'h-3 w-3',
+                    ((modelConfig.provider === 'claude' && isLoadingClaude) ||
+                     (modelConfig.provider === 'openai' && isLoadingOpenAI) ||
+                     (modelConfig.provider === 'groq' && isLoadingGroq)) && 'animate-spin'
+                  )} />
+                  Refresh
+                </button>
+              )}
               <Popover open={modelComboboxOpen} onOpenChange={setModelComboboxOpen} modal={true}>
                 <PopoverTrigger asChild>
                   <Button
@@ -943,6 +988,7 @@ export function ModelSettingsModal({
                   </Command>
                 </PopoverContent>
               </Popover>
+              </div>
             )}
           </div>
         </div>
