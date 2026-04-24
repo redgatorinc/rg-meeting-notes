@@ -8,6 +8,7 @@ import { Eye, EyeOff, Lock, Unlock } from 'lucide-react';
 import { ModelManager } from './WhisperModelManager';
 import { ParakeetModelManager } from './ParakeetModelManager';
 import { QwenAsrModelManager } from './QwenAsrModelManager';
+import { usePlatform } from '@/hooks/usePlatform';
 
 
 export interface TranscriptModelProps {
@@ -45,6 +46,10 @@ export function TranscriptSettings({ transcriptModelConfig, setTranscriptModelCo
     const [isApiKeyLocked, setIsApiKeyLocked] = useState<boolean>(true);
     const [isLockButtonVibrating, setIsLockButtonVibrating] = useState<boolean>(false);
     const [uiProvider, setUiProvider] = useState<TranscriptModelProps['provider']>(transcriptModelConfig.provider);
+    const currentPlatform = usePlatform();
+    // Qwen3-ASR vendor library uses POSIX mmap and does not build on MSVC,
+    // so disable the option on Windows until upstream ports it.
+    const qwenAsrDisabled = currentPlatform === 'windows';
 
     // Sync uiProvider when backend config changes (e.g., after model selection or initial load)
     useEffect(() => {
@@ -188,7 +193,12 @@ export function TranscriptSettings({ transcriptModelConfig, setTranscriptModelCo
                                 </SelectTrigger>
                                 <SelectContent>
                                     <SelectItem value="parakeet">⚡ Parakeet (Recommended - Real-time / Accurate)</SelectItem>
-                                    <SelectItem value="qwenAsr">🧠 Qwen3 ASR (Multilingual / Accurate)</SelectItem>
+                                    <SelectItem value="qwenAsr" disabled={qwenAsrDisabled}>
+                                        🧠 Qwen3 ASR (Multilingual / Accurate)
+                                        {qwenAsrDisabled && (
+                                            <span className="ml-2 text-xs text-muted-foreground">— macOS only</span>
+                                        )}
+                                    </SelectItem>
                                     <SelectItem value="localWhisper">🏠 Local Whisper (High Accuracy)</SelectItem>
                                     {/* <SelectItem value="deepgram">☁️ Deepgram (Backup)</SelectItem>
                                     <SelectItem value="elevenLabs">☁️ ElevenLabs</SelectItem>

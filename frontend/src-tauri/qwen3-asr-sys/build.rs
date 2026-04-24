@@ -14,12 +14,24 @@ fn main() {
     let vendor_dir = std::path::Path::new("vendor/qwen3-asr.cpp");
     let has_vendor = vendor_dir.join("CMakeLists.txt").exists();
 
-    if has_vendor {
+    // Windows: upstream qwen3-asr.cpp uses POSIX `sys/mman.h` (mmap) in its
+    // GGUF loader and text decoder, which MSVC does not provide. Until that
+    // is ported, force stub mode on Windows regardless of whether the vendor
+    // tree is cloned — otherwise `cargo build` fails with C1083 on mman.h.
+    let is_windows = cfg!(target_os = "windows");
+
+    if has_vendor && !is_windows {
         println!("cargo:warning=Building with qwen3-asr.cpp vendor library");
         build_with_vendor(vendor_dir);
     } else {
-        println!("cargo:warning=Building qwen3-asr-sys WITHOUT vendor library (stub mode)");
-        println!("cargo:warning=To enable full functionality, populate vendor/qwen3-asr.cpp");
+        if is_windows && has_vendor {
+            println!(
+                "cargo:warning=Qwen3-ASR vendor library present but not supported on Windows (mman.h); using stub."
+            );
+        } else {
+            println!("cargo:warning=Building qwen3-asr-sys WITHOUT vendor library (stub mode)");
+            println!("cargo:warning=To enable full functionality, populate vendor/qwen3-asr.cpp");
+        }
         build_stub_only();
     }
 
