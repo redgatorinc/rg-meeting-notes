@@ -9,6 +9,26 @@ pub struct MeetingModel {
     pub created_at: DateTimeUtc,
     pub updated_at: DateTimeUtc,
     pub folder_path: Option<String>,
+    #[serde(default)]
+    pub file_size_bytes: i64,
+}
+
+/// Enriched row used for the meetings-list UI. `duration_ms` is the sum of
+/// per-segment `transcripts.duration` values (stored as seconds, promoted to
+/// milliseconds here to stay integral). `speaker_count` comes from the
+/// `speakers` table — non-zero only once diarization has run. Both fallbacks
+/// to 0 are rendered as "—" by the frontend so pre-existing meetings that
+/// haven't been re-transcribed or diarized don't mislabel themselves.
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct MeetingListRow {
+    pub id: String,
+    pub title: String,
+    pub created_at: DateTimeUtc,
+    pub updated_at: DateTimeUtc,
+    pub folder_path: Option<String>,
+    pub file_size_bytes: i64,
+    pub duration_ms: i64,
+    pub speaker_count: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type)]

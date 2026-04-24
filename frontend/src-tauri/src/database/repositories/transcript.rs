@@ -23,15 +23,30 @@ impl TranscriptsRepository {
 
         let now = Utc::now();
 
+        // Best-effort stat the final audio file so the meetings-list UI can
+        // show file size alongside duration + participant count without a
+        // second round-trip. Zero on failure (e.g. auto-save disabled, or
+        // recording aborted before merge) — frontend renders "—" for zero.
+        let file_size_bytes: i64 = folder_path
+            .as_deref()
+            .and_then(|folder| {
+                std::fs::metadata(std::path::Path::new(folder).join("audio.mp4"))
+                    .ok()
+                    .map(|m| m.len() as i64)
+            })
+            .unwrap_or(0);
+
         // 1. Create the new meeting
         let result = sqlx::query(
-            "INSERT INTO meetings (id, title, created_at, updated_at, folder_path) VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO meetings (id, title, created_at, updated_at, folder_path, file_size_bytes) \
+             VALUES (?, ?, ?, ?, ?, ?)",
         )
         .bind(&meeting_id)
         .bind(meeting_title)
         .bind(now)
         .bind(now)
         .bind(&folder_path)
+        .bind(file_size_bytes)
         .execute(&mut *transaction)
         .await;
 

@@ -657,6 +657,7 @@ pub fn run() {
             api::api_save_transcript_config,
             api::api_get_transcript_api_key,
             api::api_delete_meeting,
+            api::api_delete_meeting_with_options,
             api::api_get_meeting,
             api::api_get_meeting_metadata,
             api::api_get_meeting_transcripts,

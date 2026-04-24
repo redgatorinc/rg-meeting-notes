@@ -702,16 +702,26 @@ async fn create_meeting_with_transcripts(
         .await
         .map_err(|e| anyhow!("Failed to start transaction: {}", e))?;
 
+    // Best-effort stat the imported audio file so the meetings-list UI can
+    // render size alongside duration/participant count.
+    let file_size_bytes: i64 = std::fs::metadata(
+        std::path::Path::new(&folder_path).join("audio.mp4"),
+    )
+    .ok()
+    .map(|m| m.len() as i64)
+    .unwrap_or(0);
+
     // Insert meeting
     sqlx::query(
-        "INSERT INTO meetings (id, title, created_at, updated_at, folder_path)
-         VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO meetings (id, title, created_at, updated_at, folder_path, file_size_bytes)
+         VALUES (?, ?, ?, ?, ?, ?)",
     )
     .bind(&meeting_id)
     .bind(title)
     .bind(now)
     .bind(now)
     .bind(&folder_path)
+    .bind(file_size_bytes)
     .execute(&mut *tx)
     .await
     .map_err(|e| anyhow!("Failed to create meeting: {}", e))?;

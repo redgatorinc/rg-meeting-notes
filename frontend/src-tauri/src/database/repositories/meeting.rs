@@ -1,5 +1,5 @@
 use crate::api::{MeetingDetails, MeetingTranscript};
-use crate::database::models::{MeetingModel, Transcript};
+use crate::database::models::{MeetingListRow, MeetingModel, Transcript};
 use chrono::Utc;
 use sqlx::{Connection, Error as SqlxError, SqliteConnection, SqlitePool};
 use tracing::{error, info};
@@ -8,11 +8,79 @@ pub struct MeetingsRepository;
 
 impl MeetingsRepository {
     pub async fn get_meetings(pool: &SqlitePool) -> Result<Vec<MeetingModel>, sqlx::Error> {
-        let meetings =
-            sqlx::query_as::<_, MeetingModel>("SELECT * FROM meetings ORDER BY created_at DESC")
-                .fetch_all(pool)
-                .await?;
+        let meetings = sqlx::query_as::<_, MeetingModel>(
+            "SELECT id, title, created_at, updated_at, folder_path, file_size_bytes \
+             FROM meetings ORDER BY created_at DESC",
+        )
+        .fetch_all(pool)
+        .await?;
         Ok(meetings)
+    }
+
+    /// Enriched list used by the meetings-list UI. Single aggregate query —
+    /// no N+1. `transcripts.duration` is stored in seconds (Option<f64>); we
+    /// sum then promote to integer milliseconds so the wire type is tidy.
+    /// `speakers` COUNT is 0 for meetings that haven't been diarized yet.
+    pub async fn list_with_metadata(
+        pool: &SqlitePool,
+    ) -> Result<Vec<MeetingListRow>, sqlx::Error> {
+        sqlx::query_as::<_, MeetingListRow>(
+            "SELECT \
+                m.id, m.title, m.created_at, m.updated_at, m.folder_path, \
+                m.file_size_bytes, \
+                CAST(COALESCE(SUM(t.duration), 0) * 1000 AS INTEGER) AS duration_ms, \
+                (SELECT COUNT(*) FROM speakers s WHERE s.meeting_id = m.id) AS speaker_count \
+             FROM meetings m \
+             LEFT JOIN transcripts t ON t.meeting_id = m.id \
+             GROUP BY m.id \
+             ORDER BY m.created_at DESC",
+        )
+        .fetch_all(pool)
+        .await
+    }
+
+    /// Delete a meeting and its associated DB rows, and optionally also
+    /// delete the recording folder on disk. The DB transaction and the
+    /// filesystem removal are intentionally split — the DB row is the
+    /// source of truth, so we commit the DB change first; if rmtree fails
+    /// afterwards we log but don't fail the command (the meeting is already
+    /// gone from the app's perspective).
+    pub async fn delete_meeting_with_options(
+        pool: &SqlitePool,
+        meeting_id: &str,
+        delete_audio_files: bool,
+    ) -> Result<bool, SqlxError> {
+        if meeting_id.trim().is_empty() {
+            return Err(SqlxError::Protocol(
+                "meeting_id cannot be empty".to_string(),
+            ));
+        }
+
+        // Read folder_path *before* deleting so we still have it available
+        // for the disk cleanup pass below.
+        let folder_path: Option<String> = sqlx::query_scalar(
+            "SELECT folder_path FROM meetings WHERE id = ?",
+        )
+        .bind(meeting_id)
+        .fetch_optional(pool)
+        .await?
+        .flatten();
+
+        let deleted = Self::delete_meeting(pool, meeting_id).await?;
+
+        if deleted && delete_audio_files {
+            if let Some(path) = folder_path.as_deref() {
+                let p = std::path::Path::new(path);
+                if p.is_dir() {
+                    match std::fs::remove_dir_all(p) {
+                        Ok(()) => info!("Removed recording folder {}", path),
+                        Err(e) => error!("Failed to remove recording folder {}: {}", path, e),
+                    }
+                }
+            }
+        }
+
+        Ok(deleted)
     }
 
     pub async fn delete_meeting(pool: &SqlitePool, meeting_id: &str) -> Result<bool, SqlxError> {
@@ -62,7 +130,7 @@ impl MeetingsRepository {
 
         // Get meeting details
         let meeting: Option<MeetingModel> =
-            sqlx::query_as("SELECT id, title, created_at, updated_at, folder_path FROM meetings WHERE id = ?")
+            sqlx::query_as("SELECT id, title, created_at, updated_at, folder_path, file_size_bytes FROM meetings WHERE id = ?")
                 .bind(meeting_id)
                 .fetch_optional(&mut *transaction)
                 .await?;
@@ -121,7 +189,7 @@ impl MeetingsRepository {
         }
 
         let meeting: Option<MeetingModel> =
-            sqlx::query_as("SELECT id, title, created_at, updated_at, folder_path FROM meetings WHERE id = ?")
+            sqlx::query_as("SELECT id, title, created_at, updated_at, folder_path, file_size_bytes FROM meetings WHERE id = ?")
                 .bind(meeting_id)
                 .fetch_optional(pool)
                 .await?;
@@ -261,6 +329,14 @@ async fn delete_meeting_with_transaction(
 
     // 3. Delete from transcripts
     sqlx::query("DELETE FROM transcripts WHERE meeting_id = ?")
+        .bind(meeting_id)
+        .execute(&mut *transaction)
+        .await?;
+
+    // 3b. Delete diarization speakers (added in migration
+    // 20260101000000_add_speakers_diarization.sql). Older deletion paths
+    // missed this, orphaning speaker rows.
+    sqlx::query("DELETE FROM speakers WHERE meeting_id = ?")
         .bind(meeting_id)
         .execute(&mut *transaction)
         .await?;

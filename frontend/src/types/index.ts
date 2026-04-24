@@ -128,6 +128,22 @@ export interface MeetingMetadata {
   created_at: string;
   updated_at: string;
   folder_path?: string;
+  file_size_bytes?: number;
+  duration_ms?: number;
+  speaker_count?: number;
+}
+
+/** Row shape returned by `api_get_meetings`. Enriched as of 0.4.0+ with
+ *  `duration_ms`, `speaker_count`, `file_size_bytes` for the meetings-list
+ *  redesign. Older consumers that only read `id`/`title` stay source-compat. */
+export interface MeetingListItem {
+  id: string;
+  title: string;
+  created_at?: string;
+  folder_path?: string;
+  file_size_bytes?: number;
+  duration_ms?: number;
+  speaker_count?: number;
 }
 
 export interface PaginatedTranscriptsResponse {

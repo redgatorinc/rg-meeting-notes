@@ -30,6 +30,16 @@ pub struct ApiResponse<T> {
 pub struct Meeting {
     pub id: String,
     pub title: String,
+    #[serde(default)]
+    pub created_at: Option<String>,
+    #[serde(default)]
+    pub folder_path: Option<String>,
+    #[serde(default)]
+    pub file_size_bytes: i64,
+    #[serde(default)]
+    pub duration_ms: i64,
+    #[serde(default)]
+    pub speaker_count: i64,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -333,18 +343,19 @@ pub async fn api_get_meetings<R: Runtime>(
         auth_token.is_some()
     );
     let pool = state.db_manager.pool();
-    let meetings: Result<Vec<MeetingModel>, sqlx::Error> =
-        MeetingsRepository::get_meetings(pool).await;
-
-    match meetings {
-        Ok(meeting_models) => {
-            log_info!("Successfully got {} meetings", meeting_models.len());
-
-            let result: Vec<Meeting> = meeting_models
+    match MeetingsRepository::list_with_metadata(pool).await {
+        Ok(rows) => {
+            log_info!("Successfully got {} meetings", rows.len());
+            let result: Vec<Meeting> = rows
                 .into_iter()
-                .map(|m| Meeting {
-                    id: m.id,
-                    title: m.title,
+                .map(|r| Meeting {
+                    id: r.id,
+                    title: r.title,
+                    created_at: Some(r.created_at.0.to_rfc3339()),
+                    folder_path: r.folder_path,
+                    file_size_bytes: r.file_size_bytes,
+                    duration_ms: r.duration_ms,
+                    speaker_count: r.speaker_count,
                 })
                 .collect();
             Ok(result)
@@ -741,6 +752,38 @@ pub async fn api_delete_api_key<R: Runtime>(
             );
             Err(e.to_string())
         }
+    }
+}
+
+#[tauri::command]
+pub async fn api_delete_meeting_with_options<R: Runtime>(
+    _app: AppHandle<R>,
+    state: tauri::State<'_, AppState>,
+    meeting_id: String,
+    delete_audio_files: bool,
+    auth_token: Option<String>,
+) -> Result<serde_json::Value, String> {
+    log_info!(
+        "api_delete_meeting_with_options called for {} (delete_audio_files={}, auth_token={})",
+        meeting_id,
+        delete_audio_files,
+        auth_token.is_some()
+    );
+
+    let pool = state.db_manager.pool();
+    match MeetingsRepository::delete_meeting_with_options(pool, &meeting_id, delete_audio_files)
+        .await
+    {
+        Ok(true) => Ok(serde_json::json!({
+            "status": "success",
+            "message": "Meeting deleted",
+            "deleted_audio_files": delete_audio_files,
+        })),
+        Ok(false) => Err(format!(
+            "Meeting not found or could not be deleted: {}",
+            meeting_id
+        )),
+        Err(e) => Err(format!("Failed to delete meeting: {}", e)),
     }
 }
 

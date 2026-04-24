@@ -337,10 +337,10 @@ export function SummaryGeneratorButtonGroup({
             <Button
               variant="outline"
               size="sm"
-              title="Select summary template"
+              title="Select prompt template"
             >
               <FileText />
-              <span className="hidden lg:inline">Template</span>
+              <span className="hidden lg:inline">Prompt template</span>
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
