@@ -52,12 +52,11 @@ export function DiarizationSettings() {
         <SettingsNotice tone="warning" className="p-3 text-xs">
           <p className="text-xs text-amber-900">
             <strong>Stub engine active.</strong> This build was compiled
-            without the <code>diarization-onnx</code> Cargo feature, so the
-            Diarize button currently produces a simple mic/system split
-            (1–2 clusters) instead of running the pyannote + embedding
-            pipeline. Downloading a model pack below still works, but the
-            real pipeline only runs after rebuilding with{' '}
-            <code>cargo build --features diarization-onnx</code>.
+            with <code>--no-default-features</code> (or a reduced feature
+            set) and does not include the pyannote + embedding pipeline.
+            Diarize currently produces a mic/system split only. Rebuild
+            with default features (<code>cargo build</code>) to enable
+            real diarization.
           </p>
         </SettingsNotice>
       )}
