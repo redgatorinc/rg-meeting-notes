@@ -92,11 +92,12 @@ pub async fn start_recording_with_meeting_name<R: Runtime>(
     if let Err(validation_error) = transcription::validate_transcription_model_ready(&app).await {
         error!("Model validation failed: {}", validation_error);
 
-        // Emit error event for frontend - actionable: false to show toast instead of modal
-        // (download progress is already shown in top-right toast)
+        // Surface the real validation error so users see e.g. "Failed to load
+        // model ..." / "No Qwen ASR models available" instead of a hard-coded
+        // "still downloading" line that lies when the model is actually ready.
         let _ = app.emit("transcription-error", serde_json::json!({
             "error": validation_error,
-            "userMessage": "Recording cannot start: Transcription model is still downloading. Please wait for the download to complete.",
+            "userMessage": format!("Recording cannot start: {}", validation_error),
             "actionable": false
         }));
 
@@ -335,11 +336,12 @@ pub async fn start_recording_with_devices_and_meeting<R: Runtime>(
     if let Err(validation_error) = transcription::validate_transcription_model_ready(&app).await {
         error!("Model validation failed: {}", validation_error);
 
-        // Emit error event for frontend - actionable: false to show toast instead of modal
-        // (download progress is already shown in top-right toast)
+        // Surface the real validation error so users see e.g. "Failed to load
+        // model ..." / "No Qwen ASR models available" instead of a hard-coded
+        // "still downloading" line that lies when the model is actually ready.
         let _ = app.emit("transcription-error", serde_json::json!({
             "error": validation_error,
-            "userMessage": "Recording cannot start: Transcription model is still downloading. Please wait for the download to complete.",
+            "userMessage": format!("Recording cannot start: {}", validation_error),
             "actionable": false
         }));
 
