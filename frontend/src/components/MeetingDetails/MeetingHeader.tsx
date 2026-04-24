@@ -1,15 +1,9 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { FolderOpen, RefreshCw, MoreHorizontal, Trash2 } from 'lucide-react';
+import { FolderOpen, RefreshCw, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ButtonGroup } from '@/components/ui/button-group';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import Analytics from '@/lib/analytics';
 import { useConfig } from '@/contexts/ConfigContext';
 import { RetranscribeDialog } from './RetranscribeDialog';
@@ -144,22 +138,19 @@ export function MeetingHeader({
             )}
           </ButtonGroup>
 
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button size="sm" variant="ghost" title="More">
-                <MoreHorizontal className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem
-                onClick={() => setShowDelete(true)}
-                className="text-red-600 focus:bg-red-50 focus:text-red-700"
-              >
-                <Trash2 className="mr-2 h-4 w-4" />
-                Delete meeting
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              Analytics.trackButtonClick('delete_meeting', 'meeting_header');
+              setShowDelete(true);
+            }}
+            title="Delete meeting"
+            className="gap-1.5 border-red-200 bg-red-50 text-red-700 hover:border-red-300 hover:bg-red-100 hover:text-red-800"
+          >
+            <Trash2 className="h-4 w-4" />
+            <span className="hidden lg:inline">Delete</span>
+          </Button>
         </div>
       </div>
 
