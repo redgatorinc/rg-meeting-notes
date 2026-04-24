@@ -87,7 +87,7 @@ impl IntegratedAdapter for TeamsLogsAdapter {
         // live log samples the robust thing is to return an error so
         // IntegratedWithAiFallback uses the vision path.
         Err(anyhow!(
-            "teams/log_tail: parser not yet implemented — falling back to AI path"
+            "teams/log_tail: Teams log parser is not yet implemented (the Integrated Beta currently only reports that the app is running). Switch detection mode to 'Integrated + AI fallback' to use screenshot + vision instead."
         ))
     }
 }

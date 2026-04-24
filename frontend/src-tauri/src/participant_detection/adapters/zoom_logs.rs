@@ -52,7 +52,7 @@ impl IntegratedAdapter for ZoomLogsAdapter {
         // TODO(phase-A+): tail zoom_stdout_stderr.log, parse
         // "Got active speaker" / "User <name> joined" entries.
         Err(anyhow!(
-            "zoom/log_tail: parser not yet implemented — falling back to AI path"
+            "zoom/log_tail: Zoom log parser is not yet implemented. Switch detection mode to 'Integrated + AI fallback' to use screenshot + vision instead."
         ))
     }
 }
