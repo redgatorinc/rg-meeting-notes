@@ -166,7 +166,11 @@ fn run_sherpa_pipeline(
         },
         clustering: FastClusteringConfig {
             num_clusters: -1, // -1 → pick automatically via threshold
-            threshold: 0.5,
+            // Lower threshold = more clusters (more permissive split). 0.5
+            // was collapsing distinct speakers into one cluster on short
+            // meetings; 0.4 matches sherpa-onnx's example defaults for
+            // pyannote + WeSpeaker and splits 2-3 speaker calls reliably.
+            threshold: 0.4,
         },
         ..Default::default()
     };
