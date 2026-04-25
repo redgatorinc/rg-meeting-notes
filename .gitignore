@@ -79,3 +79,7 @@ target/
 
 frontend/src-tauri/binaries/
 Cargo.lock
+
+# Prebuilt native libs vendored for sherpa-onnx diarization (Windows).
+# Download via frontend/src-tauri/scripts/fetch-sherpa-onnx.sh
+frontend/src-tauri/vendor/

@@ -18,7 +18,47 @@ fn main() {
     // Download and bundle FFmpeg binary at build-time
     ffmpeg::ensure_ffmpeg_binary();
 
+    // When diarization-onnx is on, copy the sherpa-onnx shared libs next to
+    // the final binary so Windows can resolve the DLLs at runtime without
+    // fiddling with PATH. No-op on platforms that don't use the DLLs.
+    #[cfg(all(feature = "diarization-onnx", target_os = "windows"))]
+    copy_sherpa_onnx_dlls();
+
     tauri_build::build()
+}
+
+#[cfg(all(feature = "diarization-onnx", target_os = "windows"))]
+fn copy_sherpa_onnx_dlls() {
+    use std::path::PathBuf;
+    let manifest_dir = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
+    let vendor_lib = manifest_dir.join("vendor/sherpa-onnx/lib");
+    if !vendor_lib.is_dir() {
+        println!(
+            "cargo:warning=sherpa-onnx vendor dir not found at {}. Run scripts/fetch-sherpa-onnx.sh.",
+            vendor_lib.display()
+        );
+        return;
+    }
+    // target/{profile}/ is 3 levels up from OUT_DIR
+    // (target/{profile}/build/<pkg>-<hash>/out). Walk up.
+    let out_dir = PathBuf::from(std::env::var("OUT_DIR").unwrap());
+    let profile_dir = out_dir
+        .ancestors()
+        .nth(3)
+        .expect("OUT_DIR ancestors should reach target/{profile}");
+    let dlls = ["sherpa-onnx-c-api.dll", "onnxruntime.dll", "onnxruntime_providers_shared.dll"];
+    for name in dlls {
+        let src = vendor_lib.join(name);
+        if !src.is_file() {
+            println!("cargo:warning=missing {}", src.display());
+            continue;
+        }
+        let dst = profile_dir.join(name);
+        if let Err(e) = std::fs::copy(&src, &dst) {
+            println!("cargo:warning=failed to copy {} → {}: {}", src.display(), dst.display(), e);
+        }
+    }
+    println!("cargo:rerun-if-changed={}", vendor_lib.display());
 }
 
 /// Detects GPU acceleration capabilities and provides build guidance
