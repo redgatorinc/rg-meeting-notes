@@ -47,11 +47,18 @@ if (platform === 'linux' && feature === 'cuda') {
   env.CMAKE_POSITION_INDEPENDENT_CODE = 'ON';
 }
 
-// Build the tauri command
+// Always include diarization-onnx — prebuilt sherpa-onnx libs live under
+// frontend/src-tauri/vendor/ and the build.rs copies the DLLs next to the
+// Tauri binary. Skip via env NO_DIARIZATION_ONNX=1 when you want a lean build.
+const featureList = [];
+if (feature && feature !== 'none') featureList.push(feature);
+if (!process.env.NO_DIARIZATION_ONNX) featureList.push('diarization-onnx');
+
 let tauriCmd = `tauri ${command}`;
-if (feature && feature !== 'none') {
-  tauriCmd += ` -- --features ${feature}`;
-  console.log(`🚀 Running: tauri ${command} with features: ${feature}`);
+if (featureList.length > 0) {
+  const joined = featureList.join(',');
+  tauriCmd += ` -- --features ${joined}`;
+  console.log(`🚀 Running: tauri ${command} with features: ${joined}`);
 } else {
   console.log(`🚀 Running: tauri ${command} (CPU-only mode)`);
 }
