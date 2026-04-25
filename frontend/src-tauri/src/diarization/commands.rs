@@ -100,21 +100,74 @@ pub async fn diarization_start<R: Runtime>(
         return Ok(Vec::new());
     }
 
+    // Stage 1 — transcripts loaded, about to start audio decode + inference.
+    let _ = app.emit(
+        "diarization-progress",
+        serde_json::json!({ "meeting_id": meeting_id, "progress": 0.1 }),
+    );
+
     // Real ONNX pipeline when the `diarization-onnx` feature is on AND
-    // we can resolve the meeting's audio file. Falls back to the
-    // stub if either check fails — keeps existing recordings without
-    // a saved audio.mp4 still able to produce the live-mic/live-system
-    // split the stub provides.
+    // we can resolve the meeting's audio file. Falls back to the stub
+    // if either check fails — keeps existing recordings without a saved
+    // audio.mp4 still able to produce the live-mic/live-system split
+    // the stub provides.
+    //
+    // The real engine's sd.process() is one opaque blocking call we
+    // can't instrument, so we fake mid-flight progress with a ticker
+    // task: every 2 s it bumps the UI a tick until the engine returns.
+    // Without this the progress bar would sit at 10 % for the entire
+    // 15-30 s inference and look hung.
     let (clusters, assignments) = {
+        let app_ticker = app.clone();
+        let meeting_ticker = meeting_id.clone();
+        let ticker_cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let ticker_cancel_clone = ticker_cancel.clone();
+        let ticker = tokio::spawn(async move {
+            // Climb from 0.15 → 0.80 over ~30 s, then hold.
+            let steps: &[f64] = &[0.15, 0.25, 0.35, 0.45, 0.55, 0.65, 0.75, 0.80];
+            for p in steps {
+                if ticker_cancel_clone.load(std::sync::atomic::Ordering::Relaxed) {
+                    return;
+                }
+                let _ = app_ticker.emit(
+                    "diarization-progress",
+                    serde_json::json!({ "meeting_id": meeting_ticker, "progress": p }),
+                );
+                tokio::time::sleep(Duration::from_millis(2500)).await;
+            }
+        });
+
+        log::info!(
+            "diarization_start: running real engine (pack={:?}) for meeting {}",
+            pack,
+            meeting_id
+        );
         let real_output = real_engine_run(pool, &meeting_id, pack, &transcripts).await;
+
+        ticker_cancel.store(true, std::sync::atomic::Ordering::Relaxed);
+        ticker.abort();
+
         match real_output {
-            Some(result) => result,
+            Some(result) => {
+                log::info!(
+                    "diarization_start: real engine produced {} clusters / {} assignments",
+                    result.0.len(),
+                    result.1.len()
+                );
+                result
+            }
             None => {
+                log::info!("diarization_start: falling back to stub engine");
                 let max_clusters = if transcripts.len() >= 6 { 3 } else { 2 };
                 Engine::diarize(&transcripts, pack, max_clusters)
             }
         }
     };
+
+    let _ = app.emit(
+        "diarization-progress",
+        serde_json::json!({ "meeting_id": meeting_id, "progress": 0.85 }),
+    );
 
     let new_rows: Vec<NewSpeaker> = clusters
         .iter()
