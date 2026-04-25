@@ -85,6 +85,14 @@ pub fn diarize_audio(
         return Ok((Vec::new(), Vec::new()));
     }
 
+    let distinct_raw: std::collections::HashSet<i64> =
+        raw_segments.iter().map(|s| s.cluster_idx).collect();
+    log::info!(
+        "engine_real: sherpa produced {} segments across {} raw clusters",
+        raw_segments.len(),
+        distinct_raw.len()
+    );
+
     // sherpa-onnx's speaker ids can be sparse (e.g. 1, 3 for a 2-speaker
     // meeting because an intermediate cluster got merged). Renumber to
     // dense 0..N in first-appearance order so the UI's
@@ -184,11 +192,13 @@ fn run_sherpa_pipeline(
         },
         clustering: FastClusteringConfig {
             num_clusters: -1, // -1 → pick automatically via threshold
-            // Lower threshold = more clusters (more permissive split). 0.5
-            // was collapsing distinct speakers into one cluster on short
-            // meetings; 0.4 matches sherpa-onnx's example defaults for
-            // pyannote + WeSpeaker and splits 2-3 speaker calls reliably.
-            threshold: 0.4,
+            // Lower threshold = more clusters (more permissive split).
+            // Empirical path so far: 0.5 → merged 3 speakers into 1,
+            // 0.4 → still conservative, 0.3 → splits 2-4 speaker calls
+            // cleanly on WeSpeaker ResNet34. Room to go lower on noisy
+            // recordings; we'll expose the knob in Settings later if
+            // users need it.
+            threshold: 0.3,
         },
         ..Default::default()
     };
