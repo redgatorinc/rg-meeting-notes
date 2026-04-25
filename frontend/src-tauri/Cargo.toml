@@ -132,10 +132,13 @@ qwen3-asr-sys = { path = "qwen3-asr-sys", optional = true }
 # enabled by the `diarization-onnx` feature. Default build uses the
 # stub engine in `diarization::engine` and doesn't pull this in.
 # Official sherpa-onnx Rust bindings (replaces the deprecated sherpa-rs crate).
-# Defaults include `download-binaries` which grabs prebuilt sherpa-onnx-c-api
-# libs from the crate's release storage — without it the linker can't find
-# `sherpa-onnx-c-api.lib` on Windows.
-sherpa-onnx = { version = "0.1", optional = true, features = ["download-binaries"] }
+# sherpa-onnx-sys does NOT bundle or download the native libs — it expects
+# the user to set `SHERPA_ONNX_LIB_DIR` to a folder containing
+# `sherpa-onnx-c-api.lib/.dll` and `onnxruntime.lib/.dll` before building.
+# Download: https://github.com/k2-fsa/sherpa-onnx/releases (pick
+# sherpa-onnx-v1.x.y-win-x64-shared.zip, extract, point the env var at the
+# `lib/` folder inside).
+sherpa-onnx = { version = "0.1", optional = true }
 
 # Async
 tokio = { version = "1.32.0", features = ["full", "tracing"] }
