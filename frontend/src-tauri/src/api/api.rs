@@ -1062,9 +1062,11 @@ pub async fn open_meeting_folder<R: Runtime>(
 
     let pool = state.db_manager.pool();
 
-    // Get meeting with folder_path
+    // Get meeting with folder_path (must SELECT every column MeetingModel
+    // maps, otherwise sqlx errors with "no column found for name: X").
     let meeting: Option<MeetingModel> = sqlx::query_as(
-        "SELECT id, title, created_at, updated_at, folder_path FROM meetings WHERE id = ?",
+        "SELECT id, title, created_at, updated_at, folder_path, file_size_bytes \
+         FROM meetings WHERE id = ?",
     )
     .bind(&meeting_id)
     .fetch_optional(pool)
