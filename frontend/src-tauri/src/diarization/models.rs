@@ -64,6 +64,11 @@ const SEGMENTATION_URL: &str =
     "https://huggingface.co/csukuangfj/sherpa-onnx-pyannote-segmentation-3-0/resolve/main/model.onnx?download=true";
 
 pub fn pack_spec(pack: ModelPack) -> PackSpec {
+    // Embedding URLs point at the k2-fsa/sherpa-onnx GitHub release
+    // `speaker-recongition-models` (sic — upstream typo, tag is final).
+    // Csukuangfj's individual HF repos for WeSpeaker / 3D-Speaker have
+    // become gated (401 for anonymous clients), whereas GitHub release
+    // assets stay public.
     match pack {
         ModelPack::Default => PackSpec {
             id: "default",
@@ -72,7 +77,7 @@ pub fn pack_spec(pack: ModelPack) -> PackSpec {
                 "pyannote-segmentation-3.0 + WeSpeaker ResNet34-VoxCeleb. Balanced accuracy and size, recommended for most meetings.",
             segmentation_url: SEGMENTATION_URL,
             embedding_url:
-                "https://huggingface.co/csukuangfj/sherpa-onnx-wespeaker-embeddings/resolve/main/wespeaker_en_voxceleb_resnet34.onnx?download=true",
+                "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/wespeaker_en_voxceleb_resnet34.onnx",
             embedding_model_id: "wespeaker_en_voxceleb_resnet34",
             total_size_mb: 46,
         },
@@ -83,7 +88,7 @@ pub fn pack_spec(pack: ModelPack) -> PackSpec {
                 "pyannote-segmentation-3.0 + 3D-Speaker CAM++. Smallest footprint, fastest inference on CPU.",
             segmentation_url: SEGMENTATION_URL,
             embedding_url:
-                "https://huggingface.co/csukuangfj/sherpa-onnx-3d-speaker-embeddings/resolve/main/3dspeaker_speech_campplus_sv_en_voxceleb_16k.onnx?download=true",
+                "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/3dspeaker_speech_campplus_sv_en_voxceleb_16k.onnx",
             embedding_model_id: "3dspeaker_campplus_en_voxceleb",
             total_size_mb: 36,
         },
@@ -94,7 +99,7 @@ pub fn pack_spec(pack: ModelPack) -> PackSpec {
                 "pyannote-segmentation-3.0 + WeSpeaker ResNet293. Highest diarization accuracy, larger download and slower inference.",
             segmentation_url: SEGMENTATION_URL,
             embedding_url:
-                "https://huggingface.co/csukuangfj/sherpa-onnx-wespeaker-embeddings/resolve/main/wespeaker_en_voxceleb_resnet293_LM.onnx?download=true",
+                "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/wespeaker_en_voxceleb_resnet293_LM.onnx",
             embedding_model_id: "wespeaker_en_voxceleb_resnet293",
             total_size_mb: 121,
         },
