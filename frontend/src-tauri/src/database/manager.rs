@@ -34,6 +34,12 @@ impl DatabaseManager {
 
         sqlx::migrate!("./migrations").run(&pool).await?;
 
+        // Belt-and-suspenders: some users end up with a DB created before
+        // new migration files were baked into the binary (sqlx::migrate!
+        // embeds at compile time). Ensure every column required by the
+        // current code exists regardless of migration history.
+        ensure_runtime_columns(&pool).await?;
+
         Ok(DatabaseManager { pool })
     }
 
@@ -205,4 +211,44 @@ impl DatabaseManager {
 
         Ok(())
     }
+}
+
+/// Adds any columns that the running binary expects but that might not be
+/// present in the DB — e.g. when a user upgrades from an older build where
+/// the migration file hadn't been added yet (sqlx::migrate! embeds
+/// migrations at compile time, so the migration runs only for binaries
+/// built AFTER the migration file existed).
+///
+/// Each block uses PRAGMA table_info to skip the ALTER when the column is
+/// already there, making the call idempotent across restarts.
+async fn ensure_runtime_columns(pool: &SqlitePool) -> Result<()> {
+    ensure_column(
+        pool,
+        "meetings",
+        "file_size_bytes",
+        "ALTER TABLE meetings ADD COLUMN file_size_bytes INTEGER NOT NULL DEFAULT 0",
+    )
+    .await
+}
+
+async fn ensure_column(
+    pool: &SqlitePool,
+    table: &str,
+    column: &str,
+    alter_sql: &str,
+) -> Result<()> {
+    let rows: Vec<(i64, String, String, i64, Option<String>, i64)> =
+        sqlx::query_as(&format!("PRAGMA table_info({})", table))
+            .fetch_all(pool)
+            .await?;
+    if rows.iter().any(|r| r.1 == column) {
+        return Ok(());
+    }
+    log::info!(
+        "ensure_runtime_columns: adding missing column {}.{}",
+        table,
+        column
+    );
+    sqlx::query(alter_sql).execute(pool).await?;
+    Ok(())
 }
