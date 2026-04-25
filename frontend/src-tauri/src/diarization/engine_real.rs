@@ -79,11 +79,29 @@ pub fn diarize_audio(
 
     // 2. Run sherpa-onnx. The crate's API is stable across the 0.5–0.6
     // range; we use the free functions to keep the call site small.
-    let segments = run_sherpa_pipeline(&samples, TARGET_SAMPLE_RATE, &seg_path, &emb_path)?;
+    let raw_segments = run_sherpa_pipeline(&samples, TARGET_SAMPLE_RATE, &seg_path, &emb_path)?;
 
-    if segments.is_empty() {
+    if raw_segments.is_empty() {
         return Ok((Vec::new(), Vec::new()));
     }
+
+    // sherpa-onnx's speaker ids can be sparse (e.g. 1, 3 for a 2-speaker
+    // meeting because an intermediate cluster got merged). Renumber to
+    // dense 0..N in first-appearance order so the UI's
+    // `Speaker {cluster_idx + 1}` fallback produces 1, 2, 3 sequentially.
+    let mut remap: HashMap<i64, i64> = HashMap::new();
+    let segments: Vec<Segment> = raw_segments
+        .into_iter()
+        .map(|s| {
+            let next = remap.len() as i64;
+            let idx = *remap.entry(s.cluster_idx).or_insert(next);
+            Segment {
+                start_s: s.start_s,
+                end_s: s.end_s,
+                cluster_idx: idx,
+            }
+        })
+        .collect();
 
     // 3. Tally per-cluster speaking time.
     let mut speaking_ms: HashMap<i64, i64> = HashMap::new();
