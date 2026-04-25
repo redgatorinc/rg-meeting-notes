@@ -15,4 +15,4 @@ CMAKE_OSX_DEPLOYMENT_TARGET = "14.2"
 # src-tauri/vendor/sherpa-onnx/lib. The vendor dir is gitignored — the
 # download-sherpa-onnx setup step fetches the zip from upstream releases.
 # Path is resolved relative to this config.toml (frontend/src-tauri/.cargo/).
-SHERPA_ONNX_LIB_DIR = { value = "../vendor/sherpa-onnx/lib", relative = true }
+SHERPA_ONNX_LIB_DIR = { value = "vendor/sherpa-onnx/lib", relative = true, force = true }
